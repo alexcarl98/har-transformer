@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from scipy import stats
+from scipy.fft import fft
 from torch.utils.data import DataLoader, TensorDataset
 import random
 from sklearn.model_selection import train_test_split, KFold
@@ -16,53 +18,96 @@ import math
 
 RANDOM_SEED = 0xBEEF
 
-def zero_crossing(df, column_name):
-    df[f"{column_name}_zero_crossing"] = df[column_name].diff().apply(lambda x: 1 if x > 0 else -1 if x < 0 else 0)
-    return df
+def extract_signal_features(data, window_size=100, overlap=50, sensor="waist"):
+    signal_features = []
 
-def format_time(time_col):
-    '''
-    This is a helper function to format a time column when
-    The time is dependend on shorter periods than longer ones
-    '''
-    _2π = 2*np.pi 
-    def derive_periodic_features(t, period):
-        ω = _2π / period
-        return np.sin(ω*t), np.cos(ω*t)
+    activities = data[data['activity'] != 'separator']['activity'].unique()
+    for activity in activities:
+        # Get data for this activity
+        activity_data = data[data['activity'] == activity].copy()
 
+        # Sliding window with overlap
+        step = window_size - overlap
+        # print(f"step: {step}")
+        for i in range(0, len(activity_data) - window_size, step):
+            
+            window = activity_data.iloc[i:i+window_size]
+
+            # Extract features for each axis
+            feature_row = {}
+
+            for axis in [f'{sensor}_x', f'{sensor}_y', f'{sensor}_z']:
+                values = window[axis].values
+
+                # Time domain features
+                feature_row[f'{axis}_mean'] = np.mean(values)
+                feature_row[f'{axis}_std'] = np.std(values)
+                feature_row[f'{axis}_range'] = np.max(values) - np.min(values)
+
+                # Frequency domain features
+                fft_values = fft(values)
+                fft_magnitude = np.abs(fft_values)[:window_size//2]
+
+                feature_row[f'{axis}_freq_energy'] = np.sum(fft_magnitude**2) / window_size
+                # print(feature_row)
+
+            # Add additional features using multiple axes
+            sensor_x = window[f'{sensor}_x'].values
+            sensor_y = window[f'{sensor}_y'].values
+            sensor_z = window[f'{sensor}_z'].values
+
+            # Magnitude
+            magnitude = np.sqrt(sensor_x**2 + sensor_y**2 + sensor_z**2)
+            feature_row['magnitude_mean'] = np.mean(magnitude)
+            feature_row['magnitude_std'] = np.std(magnitude)
+
+            signal_features.append(feature_row)
+
+        feature_df = pd.DataFrame(signal_features)
+        feature_df.to_csv(f'{sensor}_features.csv', index=False)
+        return feature_df
+    
+
+def derive_periodic_features(t, period):
+    ω = (2*np.pi) / period
+    return np.sin(ω*t), np.cos(ω*t)
+
+def extract_time_component(time_col, component):
+    # given component, returns raw value, time period, and data type
+    components = {
+        'dayofweek': (time_col.dt.dayofweek, 7, np.int8),
+        'day': (time_col.dt.day, 31, np.int8),
+        'hour': (time_col.dt.hour, 24, np.int8),
+        'minute': (time_col.dt.minute, 60, np.int8),
+        'second': (time_col.dt.second, 60, np.int8),
+        'microsecond': (time_col.dt.microsecond // 1000, 1000, np.int16)
+    }
+    if component not in components:
+        raise ValueError(f"Unsupported time component: {component}")
+    
+    return components[component]
+
+def create_time_features(time_col, components):
+    # given a list of components, returns a dataframe with the raw values and their periodic features
+    if components is None:
+        components = ['minute', 'second', 'microsecond']
+    
     time_col = pd.to_datetime(time_col)
-    # This data set only has time recorded within a single day
-    # Not only that but also within a single hour (around 2PM)
-    # So let's single out the minute, second, and microsecond
-    minute = time_col.dt.minute
-    second = time_col.dt.second
-    microsecond = time_col.dt.microsecond
-    # let's reformat the actual microsecond values
-    # They're recorded with a significant figure of 3, so let's divide by 1000
-    microsecond = microsecond // 1000
-    microsecond_period = 1000000//1000 # 1000 possible values
-
-    # print(f"{minute.head(4)=}");print(f"{second.head(4)=}");print(f"{microsecond.head(4)=}")
-
-    # We also can derive the sin and cos of the minute, second, and microsecond
-    sin_minute, cos_minute = derive_periodic_features(minute, 60)
-    sin_second, cos_second = derive_periodic_features(second, 60)
-    sin_microsecond, cos_microsecond = derive_periodic_features(microsecond, microsecond_period)
-
-    # Now we can concatenate the sin and cos of the minute, second, and microsecond
-    time_df = pd.DataFrame({
-        "minute": minute.astype(np.int8),
-        "second": second.astype(np.int8),
-        "microsecond": microsecond.astype(np.int16),
-        "sin_minute": sin_minute,
-        "cos_minute": cos_minute,
-        "sin_second": sin_second,
-        "cos_second": cos_second,
-        "sin_microsecond": sin_microsecond,
-        "cos_microsecond": cos_microsecond
-    })
-
-    return time_df
+    features = {}
+    
+    for component in components:
+        # Extract the raw value and metadata
+        raw_value, period, dtype = extract_time_component(time_col, component)
+        
+        # Calculate periodic features
+        sin_comp, cos_comp = derive_periodic_features(raw_value, period)
+        
+        # Store all features
+        features[component] = raw_value.astype(dtype)
+        features[f"sin_{component}"] = sin_comp
+        features[f"cos_{component}"] = cos_comp
+    
+    return pd.DataFrame(features)
 
 def remove_sensor_data(df, sensor):
     df.drop(columns=[f"{sensor}_x", f"{sensor}_y", f"{sensor}_z", f"{sensor}_vm"], inplace=True)
@@ -83,10 +128,13 @@ def create_new_data(file_path: str = "HAR_data/unproc.csv"):
         har_dataset = remove_sensor_data(har_dataset, "wrist")
         har_dataset = remove_sensor_data(har_dataset, "ankle")
 
-
-    
+    signal_features = extract_signal_features(har_dataset, window_size=100, overlap=50, sensor="waist")
+    print(signal_features.head(4))
+    print(har_dataset.shape)
+    print(signal_features.shape)
+    exit()
     # Format time column to datetime and get categorical time features
-    time_df = format_time(har_dataset["time"])
+    time_df = create_time_features(har_dataset["time"], components=["minute", "second", "microsecond"])
     har_dataset = pd.concat([har_dataset, time_df], axis=1)
     har_dataset.drop(columns=["time"], inplace=True)
     
@@ -464,7 +512,6 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(RANDOM_SEED)
         torch.cuda.manual_seed_all(RANDOM_SEED)
-
     
     X_train, X_test, y_train, y_test, h_m_d_idx = create_new_data()
     print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
@@ -500,6 +547,8 @@ def personal_test():
     k = 10
     num_classes = 6
     X_train, X_test, y_train, y_test, h_m_d_idx = create_new_data(file_path="HAR_data/my_walking_data.csv")
+
+    
     print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -516,14 +565,14 @@ def personal_test():
     # model.load_state_dict(torch.load("best_model_checkpoint.pth"))
     model.eval()
     with torch.no_grad():
-        outputs = model(X_test)
-        print(outputs[0:3])
-        print(torch.argmax(outputs, dim=1)[0:3])
-        # pred_classes = torch.argmax(outputs, dim=1)
-        # for pred_class in pred_classes:
-        #     for key, value in labels.items():
-        #         if torch.equal(pred_class, value):
-        #             print(key)
+        outputs = model(X_train)
+        predictions = torch.argmax(outputs, dim=1)
+
+        labeled = []
+        for i in range(len(predictions)):
+            activity = labels[predictions[i]]
+            labeled.append(activity)
+            print(f"{i}: {activity}")
 
 
 if __name__ == "__main__":
