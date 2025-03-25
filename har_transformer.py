@@ -513,17 +513,13 @@ def personal_test():
 
     model.to(device)
     # load existing model:
-    # model.load_state_dict(torch.load("best_model_checkpoint.pth"))
     model.eval()
     with torch.no_grad():
         outputs = model(X_test)
         print(outputs[0:3])
         print(torch.argmax(outputs, dim=1)[0:3])
-        # pred_classes = torch.argmax(outputs, dim=1)
-        # for pred_class in pred_classes:
-        #     for key, value in labels.items():
-        #         if torch.equal(pred_class, value):
-        #             print(key)
+        pred_classes = torch.argmax(outputs, dim=1)
+        print(labels[pred_classes[0]])
 
 
 if __name__ == "__main__":
