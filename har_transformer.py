@@ -1,35 +1,71 @@
+import pandas as pd
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.metrics import classification_report, precision_recall_fscore_support, confusion_matrix
+import pickle
+import seaborn as sns
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import random
-from sklearn.model_selection import train_test_split, KFold
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn import metrics
-import pandas as pd
-# regression metrics
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-# classification metrics
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, precision_recall_fscore_support
-import numpy as np
-import math
+import wandb
 
-RANDOM_SEED = 0xBEEF
+π = np.pi
+LOG_OUTPUTS   = False
+RANDOM_SEED   = 0xBEEF
+LEARNING_RATE = 0.001
+WEIGHT_DECAY  = 1e-4
+NUM_EPOCHS    = 2
+
+if LOG_OUTPUTS:
+    run = wandb.init(
+        entity="alex-alvarez1903-loyola-marymount-university",
+        project="HAR_transformer",
+        config={
+            "learning_rate": LEARNING_RATE,
+            "weight_decay": WEIGHT_DECAY,
+            "architecture": "Transformer",
+            "dataset": "HAR-labs-Accelerometer-Dataset-016",
+            "num_epochs": NUM_EPOCHS,
+            "random_seed": RANDOM_SEED
+        }
+    )
+
 
 def zero_crossing(df, column_name):
     df[f"{column_name}_zero_crossing"] = df[column_name].diff().apply(lambda x: 1 if x > 0 else -1 if x < 0 else 0)
     return df
+
+def derive_periodic_features(t, period):
+    ω = (2*π) / period
+    return np.sin(ω*t), np.cos(ω*t)
+
+def extract_time_component(time_col, component):
+    # given component, returns raw value, time period, and data type
+    components = {
+        'dayofweek': (time_col.dt.dayofweek, 7, np.int8),
+        'day': (time_col.dt.day, 31, np.int8),
+        'hour': (time_col.dt.hour, 24, np.int8),
+        'minute': (time_col.dt.minute, 60, np.int8),
+        'second': (time_col.dt.second, 60, np.int8),
+        'microsecond': (time_col.dt.microsecond // 1000, 1000000//1000, np.int16)
+    }
+    if component not in components:
+        raise ValueError(f"Unsupported time component: {component}")
+    
+    return components[component]
 
 def format_time(time_col):
     '''
     This is a helper function to format a time column when
     The time is dependend on shorter periods than longer ones
     '''
-    _2π = 2*np.pi 
-    def derive_periodic_features(t, period):
-        ω = _2π / period
-        return np.sin(ω*t), np.cos(ω*t)
-
     time_col = pd.to_datetime(time_col)
     # This data set only has time recorded within a single day
     # Not only that but also within a single hour (around 2PM)
@@ -64,29 +100,80 @@ def format_time(time_col):
 
     return time_df
 
+def time_extraction(time_col, components=None):
+    if components is None:
+        components = ['minute', 'second', 'microsecond']
+    
+    # original_Df = format_time(time_col)
+    
+    fmt_time_col = pd.to_datetime(time_col)
+
+    features = {}
+    for component in components:
+        raw_val, period, data_type = extract_time_component(fmt_time_col, component)
+        
+        sin_comp, cos_comp = derive_periodic_features(raw_val, period)
+
+        features[component] = raw_val.astype(data_type)
+        features[f"sin_{component}"] = sin_comp
+        features[f"cos_{component}"] = cos_comp
+    
+    new_df = pd.DataFrame(features)
+
+    print(f"new_df.head(4):\n{new_df.head(4)}")
+    
+    return new_df
+    
 def remove_sensor_data(df, sensor):
-    df.drop(columns=[f"{sensor}_x", f"{sensor}_y", f"{sensor}_z", f"{sensor}_vm"], inplace=True)
+    df.drop(columns=[f"{sensor}_x", f"{sensor}_y", 
+                     f"{sensor}_z", f"{sensor}_vm"], 
+                     inplace=True)
     return df
 
-def create_new_data(file_path: str = "HAR_data/unproc.csv"):
+def tensors_equal(new_data, old_data):
+    for i, (new, old) in enumerate(zip(new_data, old_data)):
+        if isinstance(new, torch.Tensor):
+            if not torch.equal(new, old):
+                # Find where they differ
+                differences = (new != old)
+                for row in range(differences.shape[0]):
+                    for col in range(differences.shape[1]):
+                        if differences[row, col]:
+                            print(f"Difference in tensor {i}:")
+                            print(f"Row {row}, Column {col}")
+                            print(f"New value: {new[row, col]}")
+                            print(f"Old value: {old[row, col]}")
+                            print("---")
+                return False
+        elif new != old:
+            print(f"Non-tensor difference in position {i}:")
+            print(f"New value: {new}")
+            print(f"Old value: {old}")
+            return False
+    return True
+
+def create_new_data(file_path: str = ""):
     target_value = "activity"
+    if file_path == "":
+        har_dataset = pd.read_csv('https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/016_labeled.csv' ) 
+    else:
+        har_dataset = pd.read_csv(file_path)
     
-    har_dataset = pd.read_csv(file_path)
     # Person never changes in this dataset, let's drop it
     if "person" in har_dataset.columns:
         har_dataset = har_dataset.drop(columns=["person"])
-    columns_with_sensors = har_dataset.filter(regex='ankle|wrist').columns
     
+    # For now just using the waist sensor
+    columns_with_sensors = har_dataset.filter(regex='ankle|wrist').columns
 
     # trying to use only one accelerometer sensor
     if columns_with_sensors.size > 1:
         har_dataset = remove_sensor_data(har_dataset, "wrist")
         har_dataset = remove_sensor_data(har_dataset, "ankle")
-
-
     
     # Format time column to datetime and get categorical time features
-    time_df = format_time(har_dataset["time"])
+    time_df = time_extraction(har_dataset["time"])
+    # time_df = format_time(har_dataset["time"])
     har_dataset = pd.concat([har_dataset, time_df], axis=1)
     har_dataset.drop(columns=["time"], inplace=True)
     
@@ -131,13 +218,35 @@ def create_new_data(file_path: str = "HAR_data/unproc.csv"):
     # Store categorical column indices for embedding layers
     categorical_indices = [min_idx, sec_idx, usec_idx]
     
+    stratify_labels = y_tensor.argmax(dim=1)
+
+    to_be_pickled = train_test_split(X_tensor, y_tensor, 
+                          test_size=0.2, 
+                          random_state=RANDOM_SEED,
+                          stratify=stratify_labels) + [categorical_indices]
+    
+    if not os.path.exists("to_be_pickled.pkl"):
+        with open("to_be_pickled.pkl", "wb") as f:
+            pickle.dump(to_be_pickled, f)
+            exit()
+    else:
+        with open("to_be_pickled.pkl", "rb") as f:
+            old_data = pickle.load(f)
+            if tensors_equal(to_be_pickled, old_data):
+                print("The output is the same as the to_be_pickled")
+            else:
+                print("The output is different from the to_be_pickled")
+                exit()
+
+
+
     # Train-test split 
-    return train_test_split(X_tensor, y_tensor, test_size=0.2, random_state=RANDOM_SEED) + [categorical_indices]
+    return to_be_pickled
 
 
 def determine_num_trials(dataset_size: int) -> int:
     value = 20 - 4*np.log10(dataset_size)
-    return max(3, min(10, math.floor(value)))
+    return max(3, min(10, np.floor(value)))
 
 class TransformerModel(nn.Module):
     def __init__(self, input_dim, h_m_d_idx, embed_dim=32, num_heads=4, num_layers=2, num_classes=1, is_regression=True):
@@ -221,113 +330,13 @@ def get_folds(k: int, X_train):
     return [fold_type(n_splits=k, shuffle=True, random_state=i) for i in range(n_trials)]
 
 
-def cross_val_performance(clf, train_data, kfs, return_dataframe=False):
-    """
-    Determine classifier performance across multiple trials using cross-validation
-
-    Parameters
-    --------------------
-        clf               -- classifier
-        train_data        -- Data, training data
-        kfs               -- array of size n_trials
-                              each element is one model_selection.KFold object
-        return_dataframe  -- boolean (default=False)
-                              if True, returns results as a Pandas DataFrame
-
-    Returns
-    --------------------
-        scores            -- numpy array of shape (n_trials, n_fold) OR
-                              DataFrame with metrics if return_dataframe=True
-    """
-    n_trials = len(kfs)
-    n_folds = kfs[0].n_splits
-
-    if train_data.is_balanced():
-        scores = np.zeros((n_trials, n_folds))
-    else:
-        scores = np.zeros((n_trials, n_folds, 3))  # Store precision, recall, f1-score
-
-    # Run multiple trials of cross-validation (CV)
-    for i, kf in enumerate(kfs):
-        scores[i] = single_trial_cross_val_performance(clf, train_data, kf)
-
-    if return_dataframe:
-        if train_data.is_balanced():
-            df = pd.DataFrame(scores, columns=[f"Fold_{i+1}" for i in range(n_folds)])
-            df.insert(0, "Trial", np.arange(1, n_trials + 1))
-        else:
-            metrics_list = ["Precision", "Recall", "F1-score"]
-            df = pd.DataFrame(
-                scores.reshape(n_trials * n_folds, 3),
-                columns=metrics_list
-            )
-            df["Trial"] = np.repeat(np.arange(1, n_trials + 1), n_folds)
-            df["Fold"] = np.tile(np.arange(1, n_folds + 1), n_trials)
-            df = df[["Trial", "Fold", "Precision", "Recall", "F1-score"]]
-        
-        return df
-
-    return scores
-
-
-def single_trial_cross_val_performance(clf, train_data, kf, return_dataframe=False):
-    """
-    Compute classifier performance across multiple folds using cross-validation
-
-    Parameters
-    --------------------
-        clf               -- classifier
-        train_data        -- Data, training data
-        kf                -- model_selection.KFold
-        return_dataframe  -- boolean (default=False)
-                              if True, returns results as a Pandas DataFrame
-
-    Returns
-    --------------------
-        scores            -- numpy array of shape (n_fold, ) OR
-                              DataFrame with metrics if return_dataframe=True
-    """
-    classes_balanced = train_data.is_balanced()
-    if classes_balanced:
-        scores = np.zeros(kf.n_splits)
-    else:
-        scores = np.zeros((kf.n_splits, 3))  # Store precision, recall, f1-score
-    # scores = np.zeros((kf.n_splits,4))
-    
-
-    # Run one trial of cross-validation (CV)
-    for fold_index, (train_index, test_index) in enumerate(kf.split(train_data.X, train_data.y)):
-        X_train, X_test = train_data.X[train_index], train_data.X[test_index]
-        y_train, y_test = train_data.y[train_index], train_data.y[test_index]
-
-        clf.fit(X_train, y_train)
-        predictions = clf.predict(X_test)
-
-        if classes_balanced:
-            accuracy = metrics.accuracy_score(y_test, predictions)
-            scores[fold_index] = accuracy
-        else:
-            precision, recall, f1_score, _ = metrics.precision_recall_fscore_support(y_test, predictions, average="macro")
-            scores[fold_index] = [precision, recall, f1_score]
-
-    if return_dataframe:
-        if classes_balanced:
-            df = pd.DataFrame(scores, columns=["Accuracy"])
-            df.insert(0, "Fold", np.arange(1, kf.n_splits + 1))
-        else:
-            df = pd.DataFrame(
-                scores, columns=["Precision", "Recall", "F1-score"]
-            )
-            df.insert(0, "Fold", np.arange(1, kf.n_splits + 1))
-        
-        return df
-
-    return scores
 
 def train_transformer(X_train, y_train, X_test, y_test, 
                       model, criterion, optimizer, num_epochs, 
                       device, patience=10):
     # Split into train and validation
+    labels = ["downstairs", "jog_treadmill", "upstairs", 
+              "walk_mixed", "walk_sidewalk", "walk_treadmill"]
     
     
     print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
@@ -434,7 +443,15 @@ def train_transformer(X_train, y_train, X_test, y_test,
         
         # Calculate metrics
         precision, recall, f1_score, _ = precision_recall_fscore_support(actuals, predictions, average="macro")
-        
+        cm = confusion_matrix(actuals, predictions)
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=labels,
+                    yticklabels=labels)
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Confusion Matrix (Raw Data)')
+        plt.savefig('transformer_confusion_matrix.png')
         print(f"Precision: {precision:.4f}")
         print(f"Recall: {recall:.4f}")
         print(f"F1-score: {f1_score:.4f}")
@@ -447,6 +464,8 @@ def train_transformer(X_train, y_train, X_test, y_test,
             'recall': recall,
             'f1_score': f1_score,
         }
+        if LOG_OUTPUTS:
+            run.log(eval_metrics)
     
     return model, best_val_loss, eval_metrics
 
@@ -457,7 +476,7 @@ def train_transformer(X_train, y_train, X_test, y_test,
 def main():
     k = 10
     num_classes = 6
-    num_epochs = 16
+    num_epochs = NUM_EPOCHS
     np.random.seed(RANDOM_SEED)
     random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)
@@ -492,14 +511,19 @@ def main():
     model, best_val_loss, metrics = train_transformer(X_train, y_train, X_test, y_test, 
                       model, criterion, optimizer, num_epochs, 
                       device, patience=10)
+    
+    if LOG_OUTPUTS:
+        run.finish()
 
 
-def personal_test():
+def custom_data_test():
     labels = ["downstairs", "jog_treadmill", "upstairs", 
               "walk_mixed", "walk_sidewalk", "walk_treadmill"]
     k = 10
     num_classes = 6
     X_train, X_test, y_train, y_test, h_m_d_idx = create_new_data(file_path="HAR_data/my_walking_data.csv")
+
+    
     print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -513,15 +537,19 @@ def personal_test():
 
     model.to(device)
     # load existing model:
+    # model.load_state_dict(torch.load("best_model_checkpoint.pth"))
     model.eval()
     with torch.no_grad():
-        outputs = model(X_test)
-        print(outputs[0:3])
-        print(torch.argmax(outputs, dim=1)[0:3])
-        pred_classes = torch.argmax(outputs, dim=1)
-        print(labels[pred_classes[0]])
+        outputs = model(X_train)
+        predictions = torch.argmax(outputs, dim=1)
+
+        labeled = []
+        for i in range(len(predictions)):
+            activity = labels[predictions[i]]
+            labeled.append(activity)
+            print(f"{i}: {activity}")
 
 
 if __name__ == "__main__":
-    # main()
-    personal_test()
+    main()
+    # custom_data_test()
