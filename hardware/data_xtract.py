@@ -22,7 +22,7 @@ FILE_PATH = "HAR_data/unproc.csv"
 FEATURES_COL = ['waist_x', 'waist_y', 'waist_z']
 LABELS_COL = ['activity']
 TIME_COL = 'time'
-WINDOW_SIZE = 5
+WINDOW_SIZE = 50
 STRIDE = 2
 TEST_SIZE = 0.2
 BATCH_SIZE = 64
@@ -155,6 +155,14 @@ class AccelTransformer(nn.Module):
 
 X, X_meta, y = load_and_process_data()
 y_int, encoder_dict, decoder_dict = encode_labels(y)
+
+print("X shape:", X.shape)
+print("X_meta shape:", X_meta.shape)
+print("y shape:", y.shape)
+print("Classes:", np.unique(y))
+print("Encoder dict:", encoder_dict)
+print("Decoder dict:", decoder_dict)
+exit()
 
 idx_train, idx_test = train_test_split(
     np.arange(len(X)), test_size=TEST_SIZE, 
