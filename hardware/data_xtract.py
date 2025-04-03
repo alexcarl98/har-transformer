@@ -8,6 +8,7 @@ from sklearn.preprocessing import LabelEncoder
 import pandas as pd
 import numpy as np
 import random
+from scipy.fft import fft
 
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
@@ -20,6 +21,7 @@ if torch.cuda.is_available():
 # ==== Data Processing ====
 FILE_PATH = "HAR_data/unproc.csv"
 FEATURES_COL = ['waist_x', 'waist_y', 'waist_z']
+vector_names = lambda a: [f"{a}_x", f"{a}_y", f"{a}_z"]
 LABELS_COL = ['activity']
 TIME_COL = 'time'
 WINDOW_SIZE = 50
@@ -39,6 +41,18 @@ def encode_labels(y):
     decoder_dict = {idx: label for label, idx in encoder_dict.items()}
     return y_int, encoder_dict, decoder_dict
 
+def extract_window_signal_features(window):
+    fft_values = fft(window)
+    fft_mag = np.abs(fft_values)[:WINDOW_SIZE//2]
+
+    mean_mag = list(np.mean(window, axis=0))
+    std_mag = list(np.std(window, axis=0))
+
+    freq_energy = list(np.mean(fft_mag**2, axis=0))
+
+    extracted = [*mean_mag, *std_mag, *freq_energy]
+    return extracted
+
 def load_and_process_data(file_path=FILE_PATH):
     # Load CSV
     df = pd.read_csv(file_path, parse_dates=[TIME_COL])
@@ -50,7 +64,7 @@ def load_and_process_data(file_path=FILE_PATH):
     df['magnitude'] = np.sqrt((df[FEATURES_COL]**2).sum(axis=1))
 
     # Identify contiguous class blocks
-    df['class_change'] = (df[LABELS_COL[0]] != df[LABELS_COL[0]].shift()).cumsum()
+    df['class_change'] = (df[LABELS_COL] != df[LABELS_COL].shift()).cumsum()
 
     # print(df)
     # Store results
@@ -62,21 +76,21 @@ def load_and_process_data(file_path=FILE_PATH):
     for _, group in df.groupby('class_change'):
         if len(group) >= WINDOW_SIZE:
             features = group[FEATURES_COL].values
-            mag_sqrd = group['magnitude'].values**2
+            mag = group['magnitude'].values
             label = group[LABELS_COL].iloc[0]
             
             # Sliding window
             for i in range(0, len(features) - WINDOW_SIZE + 1, STRIDE):
                 window = features[i:i+WINDOW_SIZE]
-                mag_sum = np.sum(mag_sqrd[i:i+WINDOW_SIZE])
+                meta_data = extract_window_signal_features(window)
 
                 X_windows.append(window)
-                X_meta.append(mag_sum)
+                X_meta.append(meta_data)
                 y_labels.append(label)
 
     # Convert to array
     X = np.array(X_windows)  # shape: (num_windows, 5, 3)
-    X_meta = np.array(X_meta).reshape(-1, 1)  # (n_windows, 1)
+    X_meta = np.array(X_meta)  # (n_windows, number_of_meta_features)
     y = np.array(y_labels)                      # (n_windows,)
     return X, X_meta, y
 
@@ -116,16 +130,17 @@ class PositionalEncoding(nn.Module):
 
 # === Transformer Model for HAR ===
 class AccelTransformer(nn.Module):
-    def __init__(self, d_model=64, nhead=4, num_layers=2, dropout=0.1, num_classes=6):
+    def __init__(self, d_model=64, n_seq_features=3, n_meta_features=3, nhead=4, num_layers=2, dropout=0.1, num_classes=6):
         super().__init__()
-        self.seq_embedding = nn.Linear(3, d_model)             # Input: (batch, seq_len, 3)
+        self.seq_embedding = nn.Linear(n_seq_features, d_model)             # Input: (batch, seq_len, 3)
         self.pos_encoder = PositionalEncoding(d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead,
                                                    dim_feedforward=128, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
-        self.energy_proj = nn.Linear(1, d_model)
+        # self.energy_proj = nn.Linear(1, d_model)
+        self.meta_proj = nn.Linear(n_meta_features, d_model)
 
         self.classifier = nn.Sequential(
             nn.Linear(d_model * 2, 128),
@@ -134,10 +149,10 @@ class AccelTransformer(nn.Module):
             nn.Linear(128, num_classes)
         )
 
-    def forward(self, x_seq, x_energy):
+    def forward(self, x_seq, x_meta):
         """
         x_seq: (batch, seq_len=5, 3)
-        x_energy: (batch, 1)
+        x_meta: (batch, n_meta_features)
         """
         x = self.seq_embedding(x_seq)         # (batch, seq_len, d_model)
         x = self.pos_encoder(x)               # (batch, seq_len, d_model)
@@ -146,9 +161,9 @@ class AccelTransformer(nn.Module):
         x = self.transformer_encoder(x)       # (seq_len, batch, d_model)
         x = x.mean(dim=0)                     # (batch, d_model)
 
-        e = self.energy_proj(x_energy)        # (batch, d_model)
+        meta = self.meta_proj(x_meta)        # (batch, d_model)
 
-        combined = torch.cat([x, e], dim=1)   # (batch, d_model * 2)
+        combined = torch.cat([x, meta], dim=1)   # (batch, d_model * 2)
 
         return self.classifier(combined)      # (batch, num_classes)
 
@@ -162,7 +177,6 @@ print("y shape:", y.shape)
 print("Classes:", np.unique(y))
 print("Encoder dict:", encoder_dict)
 print("Decoder dict:", decoder_dict)
-exit()
 
 idx_train, idx_test = train_test_split(
     np.arange(len(X)), test_size=TEST_SIZE, 
@@ -179,7 +193,11 @@ train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE,
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE)
 
 # === Model, loss, optimizer ===
-model = AccelTransformer(num_classes=len(encoder_dict)).to(DEVICE)
+model = AccelTransformer(
+    num_classes=len(encoder_dict),
+    n_seq_features=X.shape[-1],
+    n_meta_features=X_meta.shape[-1]
+).to(DEVICE)
 criterion = nn.CrossEntropyLoss()
 optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
 

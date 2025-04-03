@@ -1,10 +1,8 @@
 import pandas as pd
 import numpy as np
-import os
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import classification_report, precision_recall_fscore_support, confusion_matrix
-import pickle
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
@@ -13,7 +11,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import random
-from sklearn import metrics
 import wandb
 
 π = np.pi
@@ -37,29 +34,9 @@ if LOG_OUTPUTS:
         }
     )
 
-
-def zero_crossing(df, column_name):
-    df[f"{column_name}_zero_crossing"] = df[column_name].diff().apply(lambda x: 1 if x > 0 else -1 if x < 0 else 0)
-    return df
-
 def derive_periodic_features(t, period):
     ω = (2*π) / period
     return np.sin(ω*t), np.cos(ω*t)
-
-def extract_time_component(time_col, component):
-    # given component, returns raw value, time period, and data type
-    components = {
-        'dayofweek': (time_col.dt.dayofweek, 7, np.int8),
-        'day': (time_col.dt.day, 31, np.int8),
-        'hour': (time_col.dt.hour, 24, np.int8),
-        'minute': (time_col.dt.minute, 60, np.int8),
-        'second': (time_col.dt.second, 60, np.int8),
-        'microsecond': (time_col.dt.microsecond // 1000, 1000000//1000, np.int16)
-    }
-    if component not in components:
-        raise ValueError(f"Unsupported time component: {component}")
-    
-    return components[component]
 
 def format_time(time_col):
     '''
@@ -67,19 +44,13 @@ def format_time(time_col):
     The time is dependend on shorter periods than longer ones
     '''
     time_col = pd.to_datetime(time_col)
-    # This data set only has time recorded within a single day
-    # Not only that but also within a single hour (around 2PM)
-    # So let's single out the minute, second, and microsecond
+
     minute = time_col.dt.minute
     second = time_col.dt.second
     microsecond = time_col.dt.microsecond
-    # let's reformat the actual microsecond values
-    # They're recorded with a significant figure of 3, so let's divide by 1000
+
     microsecond = microsecond // 1000
     microsecond_period = 1000000//1000 # 1000 possible values
-
-    # print(f"{minute.head(4)=}");print(f"{second.head(4)=}");print(f"{microsecond.head(4)=}")
-
     # We also can derive the sin and cos of the minute, second, and microsecond
     sin_minute, cos_minute = derive_periodic_features(minute, 60)
     sin_second, cos_second = derive_periodic_features(second, 60)
@@ -99,30 +70,6 @@ def format_time(time_col):
     })
 
     return time_df
-
-def time_extraction(time_col, components=None):
-    if components is None:
-        components = ['minute', 'second', 'microsecond']
-    
-    # original_Df = format_time(time_col)
-    
-    fmt_time_col = pd.to_datetime(time_col)
-
-    features = {}
-    for component in components:
-        raw_val, period, data_type = extract_time_component(fmt_time_col, component)
-        
-        sin_comp, cos_comp = derive_periodic_features(raw_val, period)
-
-        features[component] = raw_val.astype(data_type)
-        features[f"sin_{component}"] = sin_comp
-        features[f"cos_{component}"] = cos_comp
-    
-    new_df = pd.DataFrame(features)
-
-    print(f"new_df.head(4):\n{new_df.head(4)}")
-    
-    return new_df
     
 def remove_sensor_data(df, sensor):
     df.drop(columns=[f"{sensor}_x", f"{sensor}_y", 
@@ -130,27 +77,6 @@ def remove_sensor_data(df, sensor):
                      inplace=True)
     return df
 
-def tensors_equal(new_data, old_data):
-    for i, (new, old) in enumerate(zip(new_data, old_data)):
-        if isinstance(new, torch.Tensor):
-            if not torch.equal(new, old):
-                # Find where they differ
-                differences = (new != old)
-                for row in range(differences.shape[0]):
-                    for col in range(differences.shape[1]):
-                        if differences[row, col]:
-                            print(f"Difference in tensor {i}:")
-                            print(f"Row {row}, Column {col}")
-                            print(f"New value: {new[row, col]}")
-                            print(f"Old value: {old[row, col]}")
-                            print("---")
-                return False
-        elif new != old:
-            print(f"Non-tensor difference in position {i}:")
-            print(f"New value: {new}")
-            print(f"Old value: {old}")
-            return False
-    return True
 
 def create_new_data(file_path: str = ""):
     target_value = "activity"
@@ -172,8 +98,7 @@ def create_new_data(file_path: str = ""):
         har_dataset = remove_sensor_data(har_dataset, "ankle")
     
     # Format time column to datetime and get categorical time features
-    time_df = time_extraction(har_dataset["time"])
-    # time_df = format_time(har_dataset["time"])
+    time_df = format_time(har_dataset["time"])
     har_dataset = pd.concat([har_dataset, time_df], axis=1)
     har_dataset.drop(columns=["time"], inplace=True)
     
@@ -224,23 +149,6 @@ def create_new_data(file_path: str = ""):
                           test_size=0.2, 
                           random_state=RANDOM_SEED,
                           stratify=stratify_labels) + [categorical_indices]
-    
-    if not os.path.exists("to_be_pickled.pkl"):
-        with open("to_be_pickled.pkl", "wb") as f:
-            pickle.dump(to_be_pickled, f)
-            exit()
-    else:
-        with open("to_be_pickled.pkl", "rb") as f:
-            old_data = pickle.load(f)
-            if tensors_equal(to_be_pickled, old_data):
-                print("The output is the same as the to_be_pickled")
-            else:
-                print("The output is different from the to_be_pickled")
-                exit()
-
-
-
-    # Train-test split 
     return to_be_pickled
 
 
