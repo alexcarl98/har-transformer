@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import time
 import torch
+from tqdm import tqdm
 π = np.pi
 
 def zero_crossing(df, column_name):
@@ -42,7 +43,8 @@ URL_BASE = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/hea
 url_suffix = "_labeled.csv"
 
 # Define the dataset numbers you want to process
-dataset_numbers = ['001', '002', '004', '008','010','011','012','013','015','016' ]
+# dataset_numbers = ['001', '002', '004', '008','010','011','012','013','015','016' ]
+dataset_numbers = ['001', '002']
 
 target = 'activity'
 
@@ -50,14 +52,21 @@ target = 'activity'
 combined_data = {}
 
 # First pass: collect all data and see total counts per activity
-for dataset_num in dataset_numbers:
+for dataset_num in tqdm(dataset_numbers):
     try:
         df = pd.read_csv(f"{URL_BASE}{dataset_num}{url_suffix}")
         person_dict = {}
+        min_sample_sz = float('inf')
         for activity, group in df.groupby(target):
             if activity not in person_dict:
                 person_dict[activity] = []
             person_dict[activity].append(group)
+            sample_num = len(group)
+            if sample_num < min_sample_sz:
+                min_sample_sz = sample_num
+        
+        half_min = min_sample_sz // 2
+        
         
         combined_data[dataset_num] = person_dict
             
