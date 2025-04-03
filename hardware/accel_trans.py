@@ -28,7 +28,7 @@ WINDOW_SIZE = 50
 STRIDE = 2
 TEST_SIZE = 0.2
 BATCH_SIZE = 64
-
+WEIGHT_DECAY = 0.0
 # ==== Training ====
 EPOCHS = 2
 LEARNING_RATE = 1e-3
@@ -66,7 +66,6 @@ def load_and_process_data(file_path=FILE_PATH):
     # Identify contiguous class blocks
     df['class_change'] = (df[LABELS_COL] != df[LABELS_COL].shift()).cumsum()
 
-    # print(df)
     # Store results
     X_windows = []
     X_meta = []
@@ -93,6 +92,18 @@ def load_and_process_data(file_path=FILE_PATH):
     X_meta = np.array(X_meta)  # (n_windows, number_of_meta_features)
     y = np.array(y_labels)                      # (n_windows,)
     return X, X_meta, y
+
+def split_data(X, X_meta, y_encoded, test_size=TEST_SIZE):
+    idx_train, idx_test = train_test_split(
+        np.arange(len(X)), test_size=test_size, 
+        random_state=RANDOM_SEED, stratify=y_encoded)
+
+    X_train, X_test = X[idx_train], X[idx_test]
+    X_meta_train, X_meta_test = X_meta[idx_train], X_meta[idx_test]
+    y_train, y_test = y_encoded[idx_train], y_encoded[idx_test]
+
+    return X_train, X_meta_train, y_train, X_test, X_meta_test, y_test
+
 
 ## Transformer Model
 class HARWindowDataset(torch.utils.data.Dataset):
@@ -178,13 +189,7 @@ print("Classes:", np.unique(y))
 print("Encoder dict:", encoder_dict)
 print("Decoder dict:", decoder_dict)
 
-idx_train, idx_test = train_test_split(
-    np.arange(len(X)), test_size=TEST_SIZE, 
-    random_state=RANDOM_SEED, stratify=y_int)
-
-X_train, X_test = X[idx_train], X[idx_test]
-X_meta_train, X_meta_test = X_meta[idx_train], X_meta[idx_test]
-y_train, y_test = y_int[idx_train], y_int[idx_test]
+X_train, X_meta_train, y_train, X_test, X_meta_test, y_test = split_data(X, X_meta, y_int)
 
 train_dataset = HARWindowDataset(X_train, X_meta_train, y_train)
 test_dataset = HARWindowDataset(X_test, X_meta_test, y_test)
@@ -199,7 +204,7 @@ model = AccelTransformer(
     n_meta_features=X_meta.shape[-1]
 ).to(DEVICE)
 criterion = nn.CrossEntropyLoss()
-optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+optimizer = Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
 # === Training loop ===
 
@@ -232,3 +237,6 @@ for epoch in range(EPOCHS):
     epoch_loss = running_loss / len(train_loader)
     epoch_acc = correct / total
     print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {epoch_loss:.4f} - Accuracy: {epoch_acc:.4f}")
+
+# === Save model ===
+torch.save(model.state_dict(), "accel_transformer.pth")
