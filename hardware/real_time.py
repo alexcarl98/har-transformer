@@ -10,6 +10,7 @@ from scipy.fft import fft
 
 # === Model (Optional Import Placeholder) ===
 from accel_trans import AccelTransformer
+from constants import WINDOW_SIZE
 
 ANSI_CYAN = "\033[96m"
 ANSI_GREEN = "\033[92m"
@@ -18,11 +19,10 @@ ANSI_RED = "\033[91m"
 ANSI_YELLOW = "\033[93m"
 ANSI_MAGENTA = "\033[95m"
 ANSI_RESET = "\033[0m"
-WINDOW_SIZE = 100  #
 
 # === UDP Setup ===
 UDP_IP = "0.0.0.0"
-decoder= {
+stylized_decoder= {
     0: f'{ANSI_BLUE}downstairs      {ANSI_RESET}', 
     1: f'{ANSI_YELLOW}jog_treadmill{ANSI_RESET}', 
     2: f'{ANSI_MAGENTA}upstairs       {ANSI_RESET}', 
@@ -35,13 +35,13 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
 print(f"Listening for MPU6050 data on UDP {UDP_PORT}...")
-classes = ["walking", "standing", "sitting", "upstairs", "downstairs", "lying"]
 
 model = AccelTransformer(
     num_classes=6,
     n_seq_features=3,
     n_meta_features=9
 ).to(DEVICE)
+
 checkpoint = torch.load('accel_transformer.pth')
 model.load_state_dict(checkpoint['model_state_dict'])
 # model.load_state_dict(torch.load("accel_transformer.pth", map_location=DEVICE))
@@ -107,9 +107,7 @@ def inference(model):
                 x_meta = torch.tensor([features], dtype=torch.float32).to(DEVICE)           # (1, 9)
                 logits = model(x_input, x_meta)
                 pred = torch.argmax(logits, dim=1).item()
-                print(f"\rPredicted class: {decoder[pred]}", end="", flush=True)
-
-
+                print(f"\rPredicted class: {stylized_decoder[pred]}", end="", flush=True)
 
 # === Launch Threads ===
 Thread(target=listener, daemon=True).start()

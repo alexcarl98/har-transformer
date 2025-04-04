@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-import math
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
@@ -11,7 +10,7 @@ import random
 from tqdm import tqdm
 from constants import *
 from preprocessing import load_and_process_data, split_data, encode_labels
-from har_model import AccelTransformer, HARWindowDataset, PositionalEncoding
+from har_model import AccelTransformer, HARWindowDataset
 
 np.random.seed(RANDOM_SEED)
 random.seed(RANDOM_SEED)
@@ -21,14 +20,10 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(RANDOM_SEED)
 
 # ==== Data Processing ====
-FILE_PATH = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/016_labeled.csv"
-
 raw_data_urls = [f"{data_dir}{num}.csv" for num in dataset_numbers]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 if __name__ == "__main__":
-
     X_all = []
     X_meta_all = []
     y_all = []

@@ -17,7 +17,7 @@ FEATURES_COL = [f'{sensor_loc}_x', f'{sensor_loc}_y', f'{sensor_loc}_z']
 LABELS_COL = ['activity']
 TIME_COL = 'time'
 ## feature extraction
-WINDOW_SIZE = 100
+WINDOW_SIZE = 100   # 100Hz
 STRIDE = 95
 
 # ===== Model Training =====
