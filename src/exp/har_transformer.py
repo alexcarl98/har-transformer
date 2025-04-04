@@ -9,6 +9,8 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from scipy import stats
+from scipy.fft import fft
 from torch.utils.data import DataLoader, TensorDataset
 import random
 import wandb
@@ -98,7 +100,7 @@ def create_new_data(file_path: str = ""):
         har_dataset = remove_sensor_data(har_dataset, "ankle")
     
     # Format time column to datetime and get categorical time features
-    time_df = format_time(har_dataset["time"])
+    time_df = create_time_features(har_dataset["time"], components=["minute", "second", "microsecond"])
     har_dataset = pd.concat([har_dataset, time_df], axis=1)
     har_dataset.drop(columns=["time"], inplace=True)
     
@@ -391,7 +393,6 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(RANDOM_SEED)
         torch.cuda.manual_seed_all(RANDOM_SEED)
-
     
     X_train, X_test, y_train, y_test, h_m_d_idx = create_new_data()
     print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
@@ -432,6 +433,8 @@ def custom_data_test():
     X_train, X_test, y_train, y_test, h_m_d_idx = create_new_data(file_path="HAR_data/my_walking_data.csv")
 
     
+
+    
     print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -448,6 +451,14 @@ def custom_data_test():
     # model.load_state_dict(torch.load("best_model_checkpoint.pth"))
     model.eval()
     with torch.no_grad():
+        outputs = model(X_train)
+        predictions = torch.argmax(outputs, dim=1)
+
+        labeled = []
+        for i in range(len(predictions)):
+            activity = labels[predictions[i]]
+            labeled.append(activity)
+            print(f"{i}: {activity}")
         outputs = model(X_train)
         predictions = torch.argmax(outputs, dim=1)
 
