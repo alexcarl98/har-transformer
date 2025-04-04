@@ -4,6 +4,7 @@ from sklearn.preprocessing import LabelEncoder
 from scipy.fft import fft
 from constants import WINDOW_SIZE, STRIDE, FEATURES_COL, LABELS_COL, TIME_COL, RANDOM_SEED, TEST_SIZE
 from sklearn.model_selection import train_test_split
+π = np.pi
 
 def encode_labels(y):
     label_encoder = LabelEncoder()
@@ -70,3 +71,39 @@ def split_data(X, X_meta, y_encoded, test_size=TEST_SIZE):
     y_train, y_test = y_encoded[idx_train], y_encoded[idx_test]
 
     return X_train, X_meta_train, y_train, X_test, X_meta_test, y_test
+
+
+
+
+
+
+def zero_crossing(df, column_name):
+    df[f"{column_name}_zero_crossing"] = df[column_name].diff().apply(lambda x: 1 if x > 0 else -1 if x < 0 else 0)
+    return df
+
+
+def derive_periodic_features(t, period):
+    ω = (2*π) / period
+    return np.sin(ω*t), np.cos(ω*t)
+
+# def tensors_equal(new_data, old_data):
+#     for i, (new, old) in enumerate(zip(new_data, old_data)):
+#         if isinstance(new, torch.Tensor):
+#             if not torch.equal(new, old):
+#                 # Find where they differ
+#                 differences = (new != old)
+#                 for row in range(differences.shape[0]):
+#                     for col in range(differences.shape[1]):
+#                         if differences[row, col]:
+#                             print(f"Difference in tensor {i}:")
+#                             print(f"Row {row}, Column {col}")
+#                             print(f"New value: {new[row, col]}")
+#                             print(f"Old value: {old[row, col]}")
+#                             print("---")
+#                 return False
+#         elif new != old:
+#             print(f"Non-tensor difference in position {i}:")
+#             print(f"New value: {new}")
+#             print(f"Old value: {old}")
+#             return False
+#     return True
