@@ -9,8 +9,11 @@ dataset_numbers = ['001', '002', '004', '008','010','011','012',
                    '036', '037', '038', '039', '040', '041']
 
 data_dir = "raw_data/"
+figure_output_dir = "doc/latex/figure/"
 if not os.path.exists(data_dir):
     os.makedirs(data_dir)
+if not os.path.exists(figure_output_dir):
+    os.makedirs(figure_output_dir)
 
 URL_BASE = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/"
 

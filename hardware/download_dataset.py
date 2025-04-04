@@ -19,6 +19,7 @@ for dataset_num in tqdm(dataset_numbers):
             sample_num = len(group)
             if sample_num < min_sample_sz:
                 min_sample_sz = sample_num
+                
         # take 90% of the smallest activity
         min_sample_sz = (9 * min_sample_sz)//10
         
