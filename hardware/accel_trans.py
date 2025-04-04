@@ -4,10 +4,14 @@ import torch.nn as nn
 from torch.optim import Adam
 from sklearn.model_selection import train_test_split
 import math
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
 import pandas as pd
 import numpy as np
 import random
+from tqdm import tqdm
 from scipy.fft import fft
 
 RANDOM_SEED = 42
@@ -19,18 +23,40 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(RANDOM_SEED)
 
 # ==== Data Processing ====
-FILE_PATH = "HAR_data/unproc.csv"
-FEATURES_COL = ['waist_x', 'waist_y', 'waist_z']
-vector_names = lambda a: [f"{a}_x", f"{a}_y", f"{a}_z"]
+FILE_PATH = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/016_labeled.csv"
+URL_BASE = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/"
+raw_data_urls = [
+    f"HAR_DATA/001.csv",
+    f"HAR_DATA/002.csv",
+    f"HAR_DATA/004.csv",
+    f"HAR_DATA/008.csv",
+    f"HAR_DATA/010.csv",
+    f"HAR_DATA/011.csv",
+    f"HAR_DATA/012.csv",
+    f"HAR_DATA/013.csv",
+    f"HAR_DATA/015.csv",
+    f"HAR_DATA/016.csv",
+    f"HAR_DATA/017.csv",
+    f"HAR_DATA/018.csv",
+    f"HAR_DATA/019.csv",
+    f"HAR_DATA/020.csv",
+    f"HAR_DATA/021.csv",
+    f"HAR_DATA/022.csv",
+    f"HAR_DATA/024.csv",
+    f"HAR_DATA/025.csv",
+    f"HAR_DATA/026.csv",
+]
+
+FEATURES_COL = ['wrist_x', 'wrist_y', 'wrist_z']
 LABELS_COL = ['activity']
 TIME_COL = 'time'
 WINDOW_SIZE = 50
-STRIDE = 2
+STRIDE = 5
 TEST_SIZE = 0.2
 BATCH_SIZE = 64
 WEIGHT_DECAY = 0.0
 # ==== Training ====
-EPOCHS = 2
+EPOCHS = 25
 LEARNING_RATE = 1e-3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -61,7 +87,7 @@ def load_and_process_data(file_path=FILE_PATH):
     df = df.sort_values(TIME_COL)
 
     # Compute magnitude
-    df['magnitude'] = np.sqrt((df[FEATURES_COL]**2).sum(axis=1))
+    # df['magnitude'] = np.sqrt((df[FEATURES_COL]**2).sum(axis=1))
 
     # Identify contiguous class blocks
     df['class_change'] = (df[LABELS_COL] != df[LABELS_COL].shift()).cumsum()
@@ -75,7 +101,6 @@ def load_and_process_data(file_path=FILE_PATH):
     for _, group in df.groupby('class_change'):
         if len(group) >= WINDOW_SIZE:
             features = group[FEATURES_COL].values
-            mag = group['magnitude'].values
             label = group[LABELS_COL].iloc[0]
             
             # Sliding window
@@ -179,64 +204,177 @@ class AccelTransformer(nn.Module):
         return self.classifier(combined)      # (batch, num_classes)
 
 
-X, X_meta, y = load_and_process_data()
-y_int, encoder_dict, decoder_dict = encode_labels(y)
+if __name__ == "__main__":
 
-print("X shape:", X.shape)
-print("X_meta shape:", X_meta.shape)
-print("y shape:", y.shape)
-print("Classes:", np.unique(y))
-print("Encoder dict:", encoder_dict)
-print("Decoder dict:", decoder_dict)
+    X_all = []
+    X_meta_all = []
+    y_all = []
 
-X_train, X_meta_train, y_train, X_test, X_meta_test, y_test = split_data(X, X_meta, y_int)
+    for file_path in tqdm(raw_data_urls):
+        X, X_meta, y = load_and_process_data(file_path)
+        X_all.append(X)
+        X_meta_all.append(X_meta)
+        y_all.append(y)
+        
 
-train_dataset = HARWindowDataset(X_train, X_meta_train, y_train)
-test_dataset = HARWindowDataset(X_test, X_meta_test, y_test)
+    X = np.concatenate(X_all, axis=0)
+    X_meta = np.concatenate(X_meta_all, axis=0)
+    y = np.concatenate(y_all, axis=0)
+    y_int, encoder_dict, decoder_dict = encode_labels(y)
 
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE)
+    print("X shape:", X.shape)
+    print("X_meta shape:", X_meta.shape)
+    print("y shape:", y.shape)
+    print("Classes:", np.unique(y))
+    print("Encoder dict:", encoder_dict)
+    print("Decoder dict:", decoder_dict)
 
-# === Model, loss, optimizer ===
-model = AccelTransformer(
-    num_classes=len(encoder_dict),
-    n_seq_features=X.shape[-1],
-    n_meta_features=X_meta.shape[-1]
-).to(DEVICE)
-criterion = nn.CrossEntropyLoss()
-optimizer = Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    # X_train, X_meta_train, y_train, X_test, X_meta_test, y_test = split_data(X, X_meta, y_int)
+    X_train, X_meta_train, y_train, X_temp, X_meta_temp, y_temp = split_data(X, X_meta, y_int)
+    X_val, X_meta_val, y_val, X_test, X_meta_test, y_test = split_data(X_temp, X_meta_temp, y_temp, 0.5)
 
-# === Training loop ===
 
-print(f"{DEVICE=}")
-for epoch in range(EPOCHS):
-    model.train()
-    running_loss = 0.0
-    correct = 0
-    total = 0
+    train_dataset = HARWindowDataset(X_train, X_meta_train, y_train)
+    val_dataset = HARWindowDataset(X_val, X_meta_val, y_val)
+    test_dataset = HARWindowDataset(X_test, X_meta_test, y_test)
 
-    for batch_idx, (x_seq, x_meta, y) in enumerate(train_loader):
-        x_seq, x_meta, y = x_seq.to(DEVICE), x_meta.to(DEVICE), y.to(DEVICE)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE)
 
-        optimizer.zero_grad()
-        outputs = model(x_seq, x_meta)
+    # === Model, loss, optimizer ===
+    model = AccelTransformer(
+        num_classes=len(encoder_dict),
+        n_seq_features=X.shape[-1],
+        n_meta_features=X_meta.shape[-1]
+    ).to(DEVICE)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
-        loss = criterion(outputs, y)
-        loss.backward()
-        optimizer.step()
+    # === Training loop ===
+    best_val_loss = float('inf')
+    best_model_state = None
+    patience=10
+    patience_counter = 0
 
-        running_loss += loss.item()
-        _, predicted = torch.max(outputs, 1)
-        correct += (predicted == y).sum().item()
-        total += y.size(0)
+    print(f"{DEVICE=}")
+    for epoch in range(EPOCHS):
+        model.train()
+        train_loss = 0
+        running_loss = 0.0
+        correct = 0
+        total = 0
+        print(f'Epoch {epoch+1}/{EPOCHS}:')
+        print(f"===(Training)===")
+        for batch_idx, (x_seq, x_meta, y_true) in enumerate(tqdm(train_loader)):
+            x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
 
-        # Print occasionally
-        if batch_idx % 100 == 0:
-            print(f"[Epoch {epoch+1}] Batch {batch_idx}: Loss = {loss.item():.4f}")
+            optimizer.zero_grad()
+            outputs = model(x_seq, x_meta)
 
-    epoch_loss = running_loss / len(train_loader)
-    epoch_acc = correct / total
-    print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {epoch_loss:.4f} - Accuracy: {epoch_acc:.4f}")
+            loss = criterion(outputs, y_true)
+            loss.backward()
+            optimizer.step()
 
-# === Save model ===
-torch.save(model.state_dict(), "accel_transformer.pth")
+            running_loss += loss.item()
+            train_loss += loss.item()
+            _, predicted = torch.max(outputs, 1)
+            correct += (predicted == y_true).sum().item()
+            total += y_true.size(0)
+
+        avg_train_loss = train_loss / len(train_loader)
+        print(f'Training Loss: {avg_train_loss:.4f}')
+
+        # Validation phase
+        model.eval()
+        val_loss = 0
+        print(f"===(Validation)===")
+        with torch.no_grad():
+            for batch_idx, (x_seq, x_meta, y_true) in enumerate(tqdm(val_loader)):
+                x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
+                outputs = model(x_seq, x_meta)
+                loss = criterion(outputs, y_true)
+                val_loss += loss.item()
+
+        avg_val_loss = val_loss / len(val_loader)
+        print(f'Validation Loss: {avg_val_loss:.4f}')
+
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_model_state = model.state_dict().copy()
+            patience_counter = 0
+            # Save the model
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_loss': avg_train_loss,
+                'val_loss': avg_val_loss,
+            }, 'accel_transformer.pth')
+            print(f'New best model saved! Validation Loss: {avg_val_loss:.4f}')
+        else:
+            patience_counter += 1
+        
+        # Early stopping check
+        if patience_counter >= patience:
+            print(f'Early stopping triggered after {epoch+1} epochs')
+            break
+    
+    # Load the best model
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+    
+    model.eval()
+    eval_metrics = {}
+    with torch.no_grad():
+        total_loss = 0
+        predictions = []
+        actuals = []
+        
+        for batch_idx, (x_seq, x_meta, y_true) in enumerate(train_loader):
+            x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
+            outputs = model(x_seq, x_meta)
+            loss = criterion(outputs, y_true)
+            total_loss += loss.item()
+            
+            # Convert outputs to class predictions
+            pred_classes = torch.argmax(outputs, dim=1)
+            true_classes = y_true
+            
+            # Store predictions and actual values
+            predictions.extend(pred_classes.cpu().numpy())
+            actuals.extend(true_classes.cpu().numpy())
+        
+        # Convert to numpy arrays
+        predictions = np.array(predictions)
+        actuals = np.array(actuals)
+        
+        # Calculate metrics
+        precision, recall, f1_score, _ = precision_recall_fscore_support(actuals, predictions)
+        cm = confusion_matrix(actuals, predictions)
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=decoder_dict.values(),
+                    yticklabels=decoder_dict.values())
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Confusion Matrix (Raw Data)')
+        plt.savefig('transformer_confusion_matrix.png')
+        print("===Evaluation Metrics===")
+        print("class\t\tprec.\trecall\tf1-score")
+        for i, value in enumerate(decoder_dict.values()):
+            print(f"{value}\t{precision[i]:.4f}\t{recall[i]:.4f}\t{f1_score[i]:.4f}")
+
+        print()    
+        print(f"avg\t\t{np.mean(precision):.4f}\t{np.mean(recall):.4f}\t{np.mean(f1_score):.4f}")
+        
+
+        
+        avg_test_loss = total_loss / len(test_loader)
+        print(f"Average Test Loss: {avg_test_loss}")
+        eval_metrics = {
+            'test_loss': avg_test_loss,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1_score,
+        }

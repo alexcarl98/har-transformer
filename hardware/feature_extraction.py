@@ -43,8 +43,8 @@ URL_BASE = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/hea
 url_suffix = "_labeled.csv"
 
 # Define the dataset numbers you want to process
-# dataset_numbers = ['001', '002', '004', '008','010','011','012','013','015','016' ]
-dataset_numbers = ['001', '002']
+dataset_numbers = ['001', '002', '004', '008','010','011','012','013','015','016']
+dataset_numbers = ['017', '018', '019', '020','021','022','024','025','026']
 
 target = 'activity'
 
@@ -65,16 +65,31 @@ for dataset_num in tqdm(dataset_numbers):
             if sample_num < min_sample_sz:
                 min_sample_sz = sample_num
         
+        min_sample_sz = (9 * min_sample_sz)//10
         half_min = min_sample_sz // 2
+
+        combined_activities = pd.DataFrame()
+
+        for activity, dataframe in person_dict.items():
+            df = dataframe[0]
+            current_activity_sz = len(df)
+            if current_activity_sz > min_sample_sz:
+                middle_index = current_activity_sz // 2
+                start_index = max(0, middle_index - half_min)
+                end_index = min(current_activity_sz, middle_index + half_min)
+                selected_data = df.iloc[start_index:end_index].copy()
+                person_dict[activity] = selected_data
+                combined_activities = pd.concat([combined_activities, selected_data], ignore_index=True)
         
-        
-        combined_data[dataset_num] = person_dict
+        combined_data[dataset_num] = combined_activities
             
     except Exception as e:
         print(f"Error processing dataset {dataset_num}: {str(e)}")
         continue
 
-print(combined_data)
+for person, activities in combined_data.items():
+    activities.to_csv(f'HAR_DATA/{person}.csv', index=False)
+
 exit()
 
 # Combine all dataframes for each activity
