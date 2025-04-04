@@ -45,6 +45,8 @@ url_suffix = "_labeled.csv"
 # Define the dataset numbers you want to process
 dataset_numbers = ['001', '002', '004', '008','010','011','012','013','015','016']
 dataset_numbers = ['017', '018', '019', '020','021','022','024','025','026']
+dataset_numbers = ['027', '028', '029', '030', '031', '032', '033', '034','035', '036', '037']
+dataset_numbers = ['038', '039', '040', '041']
 
 target = 'activity'
 

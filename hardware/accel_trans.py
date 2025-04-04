@@ -13,8 +13,8 @@ import numpy as np
 import random
 from tqdm import tqdm
 from scipy.fft import fft
+from constants import *
 
-RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
 random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
@@ -24,40 +24,8 @@ if torch.cuda.is_available():
 
 # ==== Data Processing ====
 FILE_PATH = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/016_labeled.csv"
-URL_BASE = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/"
-raw_data_urls = [
-    f"HAR_DATA/001.csv",
-    f"HAR_DATA/002.csv",
-    f"HAR_DATA/004.csv",
-    f"HAR_DATA/008.csv",
-    f"HAR_DATA/010.csv",
-    f"HAR_DATA/011.csv",
-    f"HAR_DATA/012.csv",
-    f"HAR_DATA/013.csv",
-    f"HAR_DATA/015.csv",
-    f"HAR_DATA/016.csv",
-    f"HAR_DATA/017.csv",
-    f"HAR_DATA/018.csv",
-    f"HAR_DATA/019.csv",
-    f"HAR_DATA/020.csv",
-    f"HAR_DATA/021.csv",
-    f"HAR_DATA/022.csv",
-    f"HAR_DATA/024.csv",
-    f"HAR_DATA/025.csv",
-    f"HAR_DATA/026.csv",
-]
 
-FEATURES_COL = ['wrist_x', 'wrist_y', 'wrist_z']
-LABELS_COL = ['activity']
-TIME_COL = 'time'
-WINDOW_SIZE = 50
-STRIDE = 5
-TEST_SIZE = 0.2
-BATCH_SIZE = 64
-WEIGHT_DECAY = 0.0
-# ==== Training ====
-EPOCHS = 25
-LEARNING_RATE = 1e-3
+raw_data_urls = [f"{data_dir}{num}.csv" for num in dataset_numbers]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def encode_labels(y):

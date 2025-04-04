@@ -18,6 +18,7 @@ ANSI_RED = "\033[91m"
 ANSI_YELLOW = "\033[93m"
 ANSI_MAGENTA = "\033[95m"
 ANSI_RESET = "\033[0m"
+WINDOW_SIZE = 100  #
 
 # === UDP Setup ===
 UDP_IP = "0.0.0.0"
@@ -51,7 +52,7 @@ madgwick = Madgwick(sampleperiod=0.01)  # 100Hz
 quaternion = None
 
 # === Buffers and Constants ===
-WINDOW_SIZE = 50  # 0.5s @ 100Hz
+
 accel_window = deque(maxlen=WINDOW_SIZE)
 
 def extract_window_signal_features(window):
