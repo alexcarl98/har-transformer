@@ -6,11 +6,11 @@ from ahrs.common.orientation import acc2q
 from collections import deque
 import torch
 from threading import Thread
-from scipy.fft import fft
 
 # === Model (Optional Import Placeholder) ===
 from accel_trans import AccelTransformer
 from constants import WINDOW_SIZE
+from preprocessing import extract_window_signal_features
 
 ANSI_CYAN = "\033[96m"
 ANSI_GREEN = "\033[92m"
@@ -54,18 +54,6 @@ quaternion = None
 # === Buffers and Constants ===
 
 accel_window = deque(maxlen=WINDOW_SIZE)
-
-def extract_window_signal_features(window):
-    """Extracts mean, std, and FFT-based energy from window."""
-    window = np.array(window)
-    fft_values = fft(window, axis=0)
-    fft_mag = np.abs(fft_values)[:WINDOW_SIZE//2]  # shape: (WINDOW_SIZE/2, 3)
-
-    mean_mag = np.mean(window, axis=0).tolist()
-    std_mag = np.std(window, axis=0).tolist()
-    freq_energy = np.mean(fft_mag**2, axis=0).tolist()
-
-    return mean_mag + std_mag + freq_energy  # Length: 3+3+3 = 9 features
 
 def listener():
     global quaternion
