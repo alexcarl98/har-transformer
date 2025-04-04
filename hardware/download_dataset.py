@@ -2,15 +2,11 @@ import pandas as pd
 from tqdm import tqdm
 from constants import data_dir, URL_BASE, dataset_numbers, LABELS_COL
 
-
 url_suffix = "_labeled.csv"
-
 target = LABELS_COL[0]
-
-# Initialize dictionary to store combined data
 combined_data = {}
 
-# First pass: collect all data and see total counts per activity
+# first-collect all data and see total counts per activity
 for dataset_num in tqdm(dataset_numbers):
     try:
         df = pd.read_csv(f"{URL_BASE}{dataset_num}{url_suffix}")
@@ -23,8 +19,9 @@ for dataset_num in tqdm(dataset_numbers):
             sample_num = len(group)
             if sample_num < min_sample_sz:
                 min_sample_sz = sample_num
-        
+        # take 90% of the smallest activity
         min_sample_sz = (9 * min_sample_sz)//10
+        
         half_min = min_sample_sz // 2
 
         combined_activities = pd.DataFrame()

@@ -233,3 +233,5 @@ doc/misc/
 wandb/
 
 *.pth
+
+raw_data/
