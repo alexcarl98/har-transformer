@@ -26,12 +26,17 @@ LABELS_COL = ['activity']
 TIME_COL = 'time'
 ## feature extraction
 WINDOW_SIZE = 100   # 100Hz
-STRIDE = 95
+STRIDE = WINDOW_SIZE - 10
+
+SZ_SEQ_DATA = 3
+SZ_META_DATA = 15
+NUM_CLS = 6
 
 # ===== Model Training =====
 ## model training
 TEST_SIZE = 0.2
 BATCH_SIZE = 64
 WEIGHT_DECAY = 0.0
-EPOCHS = 2
+EPOCHS = 40
 LEARNING_RATE = 1e-3
+LOAD_PREVIOUS_MODEL = False

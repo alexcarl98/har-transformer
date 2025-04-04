@@ -1,3 +1,19 @@
+"""
+KNOWN BUGS: (2025-04-03):
+
+This script is affected by several real-time data display issues:
+
+- UDP packets may arrive out of order, disrupting the time series.
+- The inference loop processes every point in the deque, even outdated ones.
+  As a result, predictions may lag behind by several seconds.
+
+Example: The model will output "upstairs" a minute after the user has stopped walking upstairs.
+
+FIXME: (unimplemented):
+- Only process the most recent 100 points.
+- Drop old packets and/or use a timestamped sliding buffer.
+"""
+
 import socket
 import struct
 import numpy as np
@@ -6,10 +22,11 @@ from ahrs.common.orientation import acc2q
 from collections import deque
 import torch
 from threading import Thread
+import time
 
 # === Model (Optional Import Placeholder) ===
 from har_model import AccelTransformer
-from constants import WINDOW_SIZE
+from constants import WINDOW_SIZE, SZ_SEQ_DATA, SZ_META_DATA, NUM_CLS
 from preprocessing import extract_window_signal_features
 
 ANSI_CYAN = "\033[96m"
@@ -37,9 +54,9 @@ sock.bind((UDP_IP, UDP_PORT))
 print(f"Listening for MPU6050 data on UDP {UDP_PORT}...")
 
 model = AccelTransformer(
-    num_classes=6,
-    n_seq_features=3,
-    n_meta_features=9
+    num_classes=NUM_CLS,
+    n_seq_features=SZ_SEQ_DATA,
+    n_meta_features=SZ_META_DATA
 ).to(DEVICE)
 
 checkpoint = torch.load('accel_transformer.pth')
@@ -83,19 +100,24 @@ def listener():
         accel_window.append(linear_accel)
         
 
+last_pred = None
+
 def inference(model):
+    global last_pred
     while True:
         if len(accel_window) == WINDOW_SIZE:
             window = list(accel_window)
             features = extract_window_signal_features(window)
 
-            # import torch
             with torch.no_grad():
-                x_input = torch.tensor(window, dtype=torch.float32).unsqueeze(0).to(DEVICE)  # (1, 50, 3)
-                x_meta = torch.tensor([features], dtype=torch.float32).to(DEVICE)           # (1, 9)
+                x_input = torch.tensor(window, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+                x_meta = torch.tensor([features], dtype=torch.float32).to(DEVICE)
                 logits = model(x_input, x_meta)
                 pred = torch.argmax(logits, dim=1).item()
-                print(f"\rPredicted class: {stylized_decoder[pred]}", end="", flush=True)
+
+                if pred != last_pred:
+                    print(f"\rPredicted class: {stylized_decoder[pred]}", end="", flush=True)
+                    last_pred = pred
 
 # === Launch Threads ===
 Thread(target=listener, daemon=True).start()
@@ -103,5 +125,8 @@ Thread(target=inference, args=(model,), daemon=True).start()
 
 
 # Keep main thread alive
-while True:
-    pass
+try:
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    print("\nExiting...")

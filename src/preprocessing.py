@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder 
 from scipy.fft import fft
-from constants import WINDOW_SIZE, STRIDE, FEATURES_COL, LABELS_COL, TIME_COL, RANDOM_SEED, TEST_SIZE
+from constants import WINDOW_SIZE, STRIDE, FEATURES_COL, LABELS_COL, TIME_COL, RANDOM_SEED, TEST_SIZE, SZ_META_DATA
 from sklearn.model_selection import train_test_split
 π = np.pi
 
@@ -20,9 +20,12 @@ def extract_window_signal_features(window):
     mean_mag = list(np.mean(window, axis=0))
     std_mag = list(np.std(window, axis=0))
 
+    freq_mean = list(np.mean(fft_mag, axis=0))
+    freq_std = list(np.std(fft_mag, axis=0))
     freq_energy = list(np.mean(fft_mag**2, axis=0))
 
-    extracted = [*mean_mag, *std_mag, *freq_energy]
+    extracted = [*mean_mag, *std_mag, *freq_mean, *freq_std, *freq_energy]
+    assert len(extracted) == SZ_META_DATA
     return extracted
 
 def load_and_process_data(file_path):

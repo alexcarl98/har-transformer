@@ -40,12 +40,16 @@ if __name__ == "__main__":
     y = np.concatenate(y_all, axis=0)
     y_int, encoder_dict, decoder_dict = encode_labels(y)
 
+    assert X.shape[-1] == SZ_SEQ_DATA
+    assert X_meta.shape[-1] == SZ_META_DATA
+    assert len(encoder_dict) == NUM_CLS
+
     print("X shape:", X.shape)
     print("X_meta shape:", X_meta.shape)
     print("y shape:", y.shape)
     print("Classes:", np.unique(y))
-    print("Encoder dict:", encoder_dict)
-    print("Decoder dict:", decoder_dict)
+    # print("Encoder dict:", encoder_dict)
+    # print("Decoder dict:", decoder_dict)
 
     # X_train, X_meta_train, y_train, X_test, X_meta_test, y_test = split_data(X, X_meta, y_int)
     X_train, X_meta_train, y_train, X_temp, X_meta_temp, y_temp = split_data(X, X_meta, y_int)
@@ -66,11 +70,18 @@ if __name__ == "__main__":
         n_seq_features=X.shape[-1],
         n_meta_features=X_meta.shape[-1]
     ).to(DEVICE)
-    criterion = nn.CrossEntropyLoss()
     optimizer = Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    best_val_loss = float('inf')
+    
+    if LOAD_PREVIOUS_MODEL:
+        checkpoint = torch.load("accel_transformer.pth")
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        best_val_loss = checkpoint['val_loss']
+
+    criterion = nn.CrossEntropyLoss()
 
     # === Training loop ===
-    best_val_loss = float('inf')
     best_model_state = None
     patience=10
     patience_counter = 0
