@@ -8,7 +8,7 @@ import torch
 from threading import Thread
 
 # === Model (Optional Import Placeholder) ===
-from accel_trans import AccelTransformer
+from har_model import AccelTransformer
 from constants import WINDOW_SIZE
 from preprocessing import extract_window_signal_features
 
