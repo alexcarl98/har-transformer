@@ -21,7 +21,7 @@ for dataset_num in tqdm(dataset_numbers):
                 min_sample_sz = sample_num
                 
         # take 90% of the smallest activity
-        min_sample_sz = (9 * min_sample_sz)//10
+        min_sample_sz = int((8.5 * min_sample_sz)//10)
         
         half_min = min_sample_sz // 2
 

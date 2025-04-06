@@ -17,7 +17,6 @@ if not os.path.exists(figure_output_dir):
 
 URL_BASE = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/"
 
-
 # ===== Intermediate Data Processing =====
 ## dataframe processing
 sensor_loc = 'waist'
@@ -34,9 +33,9 @@ NUM_CLS = 6
 
 # ===== Model Training =====
 ## model training
-TEST_SIZE = 0.2
+TEST_SIZE = 0.4
 BATCH_SIZE = 64
 WEIGHT_DECAY = 0.0
-EPOCHS = 40
+EPOCHS = 60
 LEARNING_RATE = 1e-3
 LOAD_PREVIOUS_MODEL = False

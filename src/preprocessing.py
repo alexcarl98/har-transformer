@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder 
 from scipy.fft import fft
-from constants import WINDOW_SIZE, STRIDE, FEATURES_COL, LABELS_COL, TIME_COL, RANDOM_SEED, TEST_SIZE, SZ_META_DATA
+from constants import WINDOW_SIZE, STRIDE, LABELS_COL, TIME_COL, RANDOM_SEED, TEST_SIZE, SZ_META_DATA
 from sklearn.model_selection import train_test_split
 π = np.pi
 
@@ -28,8 +28,8 @@ def extract_window_signal_features(window):
     assert len(extracted) == SZ_META_DATA
     return extracted
 
-def load_and_process_data(file_path):
-    # Load CSV
+def load_and_process_data(file_path, sensor_loc='waist'):
+    feature_cols = [f'{sensor_loc}_x', f'{sensor_loc}_y', f'{sensor_loc}_z']
     df = pd.read_csv(file_path, parse_dates=[TIME_COL])
 
     # Optional: Sort by time if needed
@@ -46,7 +46,7 @@ def load_and_process_data(file_path):
     # Process each contiguous block
     for _, group in df.groupby('class_change'):
         if len(group) >= WINDOW_SIZE:
-            features = group[FEATURES_COL].values
+            features = group[feature_cols].values
             label = group[LABELS_COL].iloc[0]
             
             # Sliding window

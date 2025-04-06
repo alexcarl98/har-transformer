@@ -24,15 +24,21 @@ raw_data_urls = [f"{data_dir}{num}.csv" for num in dataset_numbers]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if __name__ == "__main__":
+    sensor_locs = ['ankle', 'waist', 'wrist']
     X_all = []
     X_meta_all = []
     y_all = []
 
     for file_path in tqdm(raw_data_urls):
-        X, X_meta, y = load_and_process_data(file_path)
-        X_all.append(X)
-        X_meta_all.append(X_meta)
-        y_all.append(y)
+        for sensor_loc in sensor_locs:
+            try:
+                X, X_meta, y = load_and_process_data(file_path, sensor_loc)
+            except Exception as e:
+                print(f"Error processing {file_path} with {sensor_loc}: {e}")
+                continue
+            X_all.append(X)
+            X_meta_all.append(X_meta)
+            y_all.append(y)
         
 
     X = np.concatenate(X_all, axis=0)

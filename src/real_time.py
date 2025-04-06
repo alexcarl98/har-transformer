@@ -38,7 +38,7 @@ ANSI_MAGENTA = "\033[95m"
 ANSI_RESET = "\033[0m"
 
 # === UDP Setup ===
-UDP_IP = "0.0.0.0"
+UDP_IP = ""
 stylized_decoder= {
     0: f'{ANSI_BLUE}downstairs      {ANSI_RESET}', 
     1: f'{ANSI_YELLOW}jog_treadmill{ANSI_RESET}', 
