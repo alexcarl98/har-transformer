@@ -38,16 +38,13 @@ conda install -c conda-forge pytest
 pip install ahrs    # no conda package for ahrs
 ```
 
-
-
 ### Download Dataset
-
 
 ```sh
 python src/download_dataset.py
 ```
 
-after running you should have a new raw_data file which would look like this:
+After running you should have a new `raw_data/` file which would look like this:
 
 ```sh
 root/
@@ -61,7 +58,9 @@ root/
 │   └── 041.csv
 ├── README.md
 ├── requirements.txt
-└── src
+├── tests/
+├── scripts/
+└── src/
 ```
 
 
@@ -75,6 +74,8 @@ python src/train.py
 You will need:
 - Raspberry Pi Zero 2W
 - MPU6050 Accelerometer
+
+> **NOTE**: Wiring table for connecting the accelerometer to the pi can be found under `docs/`
 
 After installing raspbian OS onto your pi, copy over the `pi_files/` directory to the root of the rasperry pi. 
 ```sh
@@ -94,7 +95,7 @@ ssh $USERNAME@$IP_ADDRESS
 
 Run the files as follows
 - PI: Run `~/pi_files/init_hardware.sh`
-    - One done the first time
+    - Only done the first time
 - HOST: Run `src/real_time.py`
 - PI: Run `pi_files/send_accelerometer_stream.py`
 
