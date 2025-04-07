@@ -1,0 +1,28 @@
+data_dir: "raw_data/"
+output_dir: "doc/latex/figure/"
+random_seed: 42
+
+# ==== Data Processing ====
+sensor_loc:
+  - "waist"
+  - "ankle"
+  - "wrist"
+window_size: 100
+test_size: 0.4
+
+# ==== Model Training ====
+random_forest:
+  n_estimators: 100
+  max_depth: 10
+  min_samples_split: 2
+  min_samples_leaf: 1
+
+transformer:
+  batch_size: 64
+  weight_decay: 0.0
+  epochs: 60
+  learning_rate: 1e-3
+
+  prev_model:
+    load_previous_model: false
+    load_model_path: ''

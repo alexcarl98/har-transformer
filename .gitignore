@@ -229,9 +229,7 @@ Temporary Items
 
 ## Custom
 doc/misc/
-
 wandb/
-
 *.pth
-
 raw_data/
+scripts/mgmt.sh
