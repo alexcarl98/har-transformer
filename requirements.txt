@@ -8,3 +8,4 @@ tqdm==4.66.5
 matplotlib==3.9.2
 wandb==0.19.8
 ahrs
+pytest

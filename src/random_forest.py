@@ -9,7 +9,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 
 # Data Loading and Preparation
-df = pd.read_csv('https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/016_labeled.csv')
+df = pd.read_csv('raw_data/016.csv')
 
 # Display all the unique activites
 print(df['activity'].unique())

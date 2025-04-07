@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder 
 from scipy.fft import fft
-from .constants import WINDOW_SIZE, STRIDE, LABELS_COL, TIME_COL, RANDOM_SEED, TEST_SIZE, SZ_META_DATA
+from constants import WINDOW_SIZE, STRIDE, LABELS_COL, TIME_COL, RANDOM_SEED, TEST_SIZE, SZ_META_DATA
 from sklearn.model_selection import train_test_split
 π = np.pi
 

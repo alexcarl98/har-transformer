@@ -57,7 +57,6 @@ if __name__ == "__main__":
     # print("Encoder dict:", encoder_dict)
     # print("Decoder dict:", decoder_dict)
 
-    # X_train, X_meta_train, y_train, X_test, X_meta_test, y_test = split_data(X, X_meta, y_int)
     X_train, X_meta_train, y_train, X_temp, X_meta_temp, y_temp = split_data(X, X_meta, y_int)
     X_val, X_meta_val, y_val, X_test, X_meta_test, y_test = split_data(X_temp, X_meta_temp, y_temp, 0.5)
 
@@ -89,50 +88,70 @@ if __name__ == "__main__":
 
     # === Training loop ===
     best_model_state = None
-    patience=10
+    patience = 10
     patience_counter = 0
 
     print(f"{DEVICE=}")
     for epoch in range(EPOCHS):
+        # Training phase
         model.train()
-        train_loss = 0
-        running_loss = 0.0
+        train_loss = 0.0
         correct = 0
         total = 0
         print(f'Epoch {epoch+1}/{EPOCHS}:')
         print(f"===(Training)===")
-        for batch_idx, (x_seq, x_meta, y_true) in enumerate(tqdm(train_loader)):
+        pbar = tqdm(train_loader)
+        for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
             x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
 
             optimizer.zero_grad()
             outputs = model(x_seq, x_meta)
-
             loss = criterion(outputs, y_true)
             loss.backward()
             optimizer.step()
 
-            running_loss += loss.item()
-            train_loss += loss.item()
+            # Accumulate batch loss
+            train_loss += loss.item() * x_seq.size(0)  # multiply by batch size
             _, predicted = torch.max(outputs, 1)
             correct += (predicted == y_true).sum().item()
             total += y_true.size(0)
+            
+            # Update progress bar with current loss and accuracy
+            current_avg_loss = train_loss / total  # divide by total samples seen
+            current_accuracy = 100. * correct / total
+            if batch_idx % 10 == 0 or batch_idx == len(train_loader) - 1:
+                pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%")
 
-        avg_train_loss = train_loss / len(train_loader)
-        print(f'Training Loss: {avg_train_loss:.4f}')
+        avg_train_loss = train_loss / total
+        train_accuracy = 100. * correct / total
 
         # Validation phase
         model.eval()
-        val_loss = 0
+        val_loss = 0.0
+        val_correct = 0
+        val_total = 0
         print(f"===(Validation)===")
         with torch.no_grad():
-            for batch_idx, (x_seq, x_meta, y_true) in enumerate(tqdm(val_loader)):
+            pbar = tqdm(val_loader)
+            for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
                 x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
                 outputs = model(x_seq, x_meta)
                 loss = criterion(outputs, y_true)
-                val_loss += loss.item()
+                
+                # Accumulate batch loss and accuracy
+                val_loss += loss.item() * x_seq.size(0)
+                _, predicted = torch.max(outputs, 1)
+                val_correct += (predicted == y_true).sum().item()
+                val_total += y_true.size(0)
+                
+                # Update progress bar with current average loss and accuracy
+                current_avg_loss = val_loss / val_total
+                current_accuracy = 100. * val_correct / val_total
+                if batch_idx % 10 == 0 or batch_idx == len(val_loader) - 1:
+                    pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%")
 
-        avg_val_loss = val_loss / len(val_loader)
-        print(f'Validation Loss: {avg_val_loss:.4f}')
+        avg_val_loss = val_loss / val_total
+        val_accuracy = 100. * val_correct / val_total
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
@@ -154,6 +173,7 @@ if __name__ == "__main__":
         if patience_counter >= patience:
             print(f'Early stopping triggered after {epoch+1} epochs')
             break
+        print()
     
     # Load the best model
     if best_model_state is not None:
