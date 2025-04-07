@@ -39,7 +39,6 @@ if __name__ == "__main__":
             X_all.append(X)
             X_meta_all.append(X_meta)
             y_all.append(y)
-        
 
     X = np.concatenate(X_all, axis=0)
     X_meta = np.concatenate(X_meta_all, axis=0)
@@ -88,9 +87,7 @@ if __name__ == "__main__":
 
     # === Training loop ===
     best_model_state = None
-    patience = 10
     patience_counter = 0
-
     print(f"{DEVICE=}")
     for epoch in range(EPOCHS):
         # Training phase
@@ -170,7 +167,7 @@ if __name__ == "__main__":
             patience_counter += 1
         
         # Early stopping check
-        if patience_counter >= patience:
+        if patience_counter >= PATIENCE:
             print(f'Early stopping triggered after {epoch+1} epochs')
             break
         print()
@@ -185,8 +182,10 @@ if __name__ == "__main__":
         total_loss = 0
         predictions = []
         actuals = []
+        correct = 0
+        total = 0
         
-        for batch_idx, (x_seq, x_meta, y_true) in enumerate(train_loader):
+        for batch_idx, (x_seq, x_meta, y_true) in enumerate(test_loader):
             x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
             outputs = model(x_seq, x_meta)
             loss = criterion(outputs, y_true)
@@ -196,9 +195,16 @@ if __name__ == "__main__":
             pred_classes = torch.argmax(outputs, dim=1)
             true_classes = y_true
             
+            # Calculate accuracy
+            correct += (pred_classes == true_classes).sum().item()
+            total += true_classes.size(0)
+            
             # Store predictions and actual values
             predictions.extend(pred_classes.cpu().numpy())
             actuals.extend(true_classes.cpu().numpy())
+        
+        test_accuracy = 100. * correct / total
+        print(f"Test Accuracy: {test_accuracy:.2f}%")
         
         # Convert to numpy arrays
         predictions = np.array(predictions)
@@ -222,8 +228,6 @@ if __name__ == "__main__":
 
         print()    
         print(f"avg\t\t{np.mean(precision):.4f}\t{np.mean(recall):.4f}\t{np.mean(f1_score):.4f}")
-        
-
         
         avg_test_loss = total_loss / len(test_loader)
         print(f"Average Test Loss: {avg_test_loss}")

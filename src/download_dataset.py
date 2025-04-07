@@ -20,8 +20,8 @@ for dataset_num in tqdm(dataset_numbers):
             if sample_num < min_sample_sz:
                 min_sample_sz = sample_num
                 
-        # take 90% of the smallest activity
-        min_sample_sz = int((8.5 * min_sample_sz)//10)
+        # take percentage of the smallest activity
+        min_sample_sz = int(0.85 * min_sample_sz)
         
         half_min = min_sample_sz // 2
 
