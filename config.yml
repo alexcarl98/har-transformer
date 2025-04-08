@@ -1,28 +1,37 @@
-data_dir: "raw_data/"
-output_dir: "doc/latex/figure/"
-random_seed: 42
-
-# ==== Data Processing ====
-sensor_loc:
-  - "waist"
-  - "ankle"
-  - "wrist"
-window_size: 100
-test_size: 0.4
+model: &base_model
+  data_dir: "raw_data/"
+  output_dir: "doc/latex/figure/"
+  random_seed: 42
+  # ==== Data Processing ====
+  sensor_loc:
+    - "waist"
+    - "ankle"
+    - "wrist"
+  window_size: 100
+  stride: 5
 
 # ==== Model Training ====
 random_forest:
+  <<: *base_model
   n_estimators: 100
   max_depth: 10
   min_samples_split: 2
   min_samples_leaf: 1
 
 transformer:
+  <<: *base_model
+  test_size: 0.2
+  num_classes: 6
   batch_size: 64
+  patience: 20
+  learning_rate: 0.001
   weight_decay: 0.0
-  epochs: 60
-  learning_rate: 1e-3
-
-  prev_model:
-    load_previous_model: false
-    load_model_path: ''
+  epochs: 40
+  d_model: 64
+  fc_hidden_dim: 128
+  in_seq_dim: 3
+  in_meta_dim: 15
+  nhead: 4
+  num_layers: 2
+  dropout: 0.1
+  load_model_path: ''

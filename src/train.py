@@ -9,30 +9,90 @@ import numpy as np
 import random
 from tqdm import tqdm
 from constants import *
+from sklearn.metrics import classification_report
 from preprocessing import load_and_process_data, split_data, encode_labels
 from har_model import AccelTransformer, HARWindowDataset
+from sklearn.model_selection import train_test_split
+from utils import TConfig
+import yaml
 
-np.random.seed(RANDOM_SEED)
-random.seed(RANDOM_SEED)
-torch.manual_seed(RANDOM_SEED)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(RANDOM_SEED)
-    torch.cuda.manual_seed_all(RANDOM_SEED)
 
 # ==== Data Processing ====
 raw_data_urls = [f"{data_dir}{num}.csv" for num in dataset_numbers]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def evaluate_model(model, data_loader, criterion, name="model",verbose=False, graph=False):
+    model.eval()
+    loss = 0.0
+    predictions = []
+    true = []
+    print(f"===(Validation)===")
+    with torch.no_grad():
+        pbar = tqdm(data_loader)
+        for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
+            x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
+            outputs = model(x_seq, x_meta)
+            loss = criterion(outputs, y_true)
+            
+            # Accumulate batch loss
+            loss += loss.item() * x_seq.size(0)
+            
+            # Get predictions
+            pred_classes = torch.argmax(outputs, dim=1)
+            predictions.extend(pred_classes.cpu().numpy())
+            true.extend(y_true.cpu().numpy())
+            
+            # Update progress bar
+            current_avg_loss = loss / ((batch_idx + 1) * x_seq.size(0))
+            pbar.set_description(f"Loss: {current_avg_loss:.4f}")
+
+    # Calculate validation metrics
+    predictions = np.array(predictions)
+    true = np.array(true)
+    precision, recall, f1, _ = precision_recall_fscore_support(true, predictions, average='macro')
+    avg_loss = loss / len(data_loader.dataset)
+
+    if verbose:
+        print(classification_report(true, predictions))
+
+    if graph:
+        cm = confusion_matrix(true, predictions)
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=decoder_dict.values(),
+                    yticklabels=decoder_dict.values())
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Confusion Matrix (Raw Data)')
+        plt.savefig(f'{name}_confusion_matrix.png')
+    
+    return avg_loss, f1
+    # print(f"Validation - Avg Loss: {avg_loss:.4f}, F1 Score: {f1:.4f}")
+    
+    
+
+
 if __name__ == "__main__":
-    sensor_locs = ['ankle', 'waist', 'wrist']
+    with open("config.yml", "r") as f:
+        config = yaml.safe_load(f)
+
+    args = TConfig(**config['transformer'])
+
+    np.random.seed(args.random_seed)
+    random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.random_seed)
+        torch.cuda.manual_seed_all(args.random_seed)
+    
     X_all = []
     X_meta_all = []
     y_all = []
 
     for file_path in tqdm(raw_data_urls):
-        for sensor_loc in sensor_locs:
+        for sensor_loc in args.sensor_loc:
             try:
-                X, X_meta, y = load_and_process_data(file_path, sensor_loc)
+                X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
             except Exception as e:
                 print(f"Error processing {file_path} with {sensor_loc}: {e}")
                 continue
@@ -40,62 +100,94 @@ if __name__ == "__main__":
             X_meta_all.append(X_meta)
             y_all.append(y)
 
-    X = np.concatenate(X_all, axis=0)
-    X_meta = np.concatenate(X_meta_all, axis=0)
-    y = np.concatenate(y_all, axis=0)
-    y_int, encoder_dict, decoder_dict = encode_labels(y)
+    # Split subjects into train/val/test before concatenating
+    n_subjects = len(X_all)
+    indices = np.arange(n_subjects)
+    
+    # First split: 60% train, 40% temp
+    train_indices, temp_indices = train_test_split(
+        indices, test_size=args.test_size, random_state=args.random_seed
+    )
+    
+    # Second split: 20% val, 20% test (from the 40% temp)
+    val_indices, test_indices = train_test_split(
+        temp_indices, test_size=0.5, random_state=args.random_seed
+    )
+    
+    # Concatenate data for each split
+    X_train = np.concatenate([X_all[i] for i in train_indices], axis=0)
+    X_meta_train = np.concatenate([X_meta_all[i] for i in train_indices], axis=0)
+    y_train = np.concatenate([y_all[i] for i in train_indices], axis=0).ravel()
+    
+    X_val = np.concatenate([X_all[i] for i in val_indices], axis=0)
+    X_meta_val = np.concatenate([X_meta_all[i] for i in val_indices], axis=0)
+    y_val = np.concatenate([y_all[i] for i in val_indices], axis=0).ravel()
+    
+    X_test = np.concatenate([X_all[i] for i in test_indices], axis=0)
+    X_meta_test = np.concatenate([X_meta_all[i] for i in test_indices], axis=0)
+    y_test = np.concatenate([y_all[i] for i in test_indices], axis=0).ravel()
+    
+    # Encode labels after splitting
+    y_train_int, encoder_dict, decoder_dict = encode_labels(y_train)
+    y_val_int = np.array([encoder_dict[label] for label in y_val])
+    y_test_int = np.array([encoder_dict[label] for label in y_test])
 
-    assert X.shape[-1] == SZ_SEQ_DATA
-    assert X_meta.shape[-1] == SZ_META_DATA
-    assert len(encoder_dict) == NUM_CLS
+    assert X_train.shape[-1] == args.in_seq_dim
+    assert X_meta_train.shape[-1] == args.in_meta_dim
+    assert len(encoder_dict) == args.num_classes
 
-    print("X shape:", X.shape)
-    print("X_meta shape:", X_meta.shape)
-    print("y shape:", y.shape)
-    print("Classes:", np.unique(y))
-    # print("Encoder dict:", encoder_dict)
-    # print("Decoder dict:", decoder_dict)
+    print("X_train shape:", X_train.shape)
+    print("X_val shape:", X_val.shape)
+    print("X_test shape:", X_test.shape)
+    print("Classes:", np.unique(y_train))
 
-    X_train, X_meta_train, y_train, X_temp, X_meta_temp, y_temp = split_data(X, X_meta, y_int)
-    X_val, X_meta_val, y_val, X_test, X_meta_test, y_test = split_data(X_temp, X_meta_temp, y_temp, 0.5)
-
-
-    train_dataset = HARWindowDataset(X_train, X_meta_train, y_train)
-    val_dataset = HARWindowDataset(X_val, X_meta_val, y_val)
-    test_dataset = HARWindowDataset(X_test, X_meta_test, y_test)
+    train_dataset = HARWindowDataset(X_train, X_meta_train, y_train_int)
+    val_dataset = HARWindowDataset(X_val, X_meta_val, y_val_int)
+    test_dataset = HARWindowDataset(X_test, X_meta_test, y_test_int)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE)
+    
+
 
     # === Model, loss, optimizer ===
     model = AccelTransformer(
-        num_classes=len(encoder_dict),
-        n_seq_features=X.shape[-1],
-        n_meta_features=X_meta.shape[-1]
+        d_model=args.d_model,
+        fc_hidden_dim=args.fc_hidden_dim,
+        num_classes=args.num_classes,
+        in_seq_dim=args.in_seq_dim,
+        in_meta_dim=args.in_meta_dim,
+        nhead=args.nhead,
+        num_layers=args.num_layers,
+        dropout=args.dropout
     ).to(DEVICE)
-    optimizer = Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    best_val_loss = float('inf')
+    optimizer = Adam(model.parameters(),
+                      lr=args.learning_rate, 
+                      weight_decay=args.weight_decay)
     
-    if LOAD_PREVIOUS_MODEL:
-        checkpoint = torch.load("accel_transformer.pth")
+    best_val_f1 = 0.0
+    
+    if args.load_model_path:
+        checkpoint = torch.load(args.load_model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        best_val_loss = checkpoint['val_loss']
+        best_val_f1 = checkpoint['val_f1']
 
     criterion = nn.CrossEntropyLoss()
 
     # === Training loop ===
     best_model_state = None
     patience_counter = 0
+    last_epoch = 0
     print(f"{DEVICE=}")
-    for epoch in range(EPOCHS):
+    for epoch in range(args.epochs):
         # Training phase
         model.train()
         train_loss = 0.0
         correct = 0
         total = 0
-        print(f'Epoch {epoch+1}/{EPOCHS}:')
+        print(f'Epoch {epoch+1}/{args.epochs}:')
         print(f"===(Training)===")
         pbar = tqdm(train_loader)
         for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
@@ -123,35 +215,12 @@ if __name__ == "__main__":
         train_accuracy = 100. * correct / total
 
         # Validation phase
-        model.eval()
-        val_loss = 0.0
-        val_correct = 0
-        val_total = 0
-        print(f"===(Validation)===")
-        with torch.no_grad():
-            pbar = tqdm(val_loader)
-            for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
-                x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
-                outputs = model(x_seq, x_meta)
-                loss = criterion(outputs, y_true)
-                
-                # Accumulate batch loss and accuracy
-                val_loss += loss.item() * x_seq.size(0)
-                _, predicted = torch.max(outputs, 1)
-                val_correct += (predicted == y_true).sum().item()
-                val_total += y_true.size(0)
-                
-                # Update progress bar with current average loss and accuracy
-                current_avg_loss = val_loss / val_total
-                current_accuracy = 100. * val_correct / val_total
-                if batch_idx % 10 == 0 or batch_idx == len(val_loader) - 1:
-                    pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%")
+        avg_val_loss, f1 = evaluate_model(model, val_loader, criterion)
+        print(f"Validation - Avg Loss: {avg_val_loss:.4f}, F1 Score: {f1:.4f}")
 
-        avg_val_loss = val_loss / val_total
-        val_accuracy = 100. * val_correct / val_total
-
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
+        # Save best model based on F1 score
+        if f1 > best_val_f1:
+            best_val_f1 = f1
             best_model_state = model.state_dict().copy()
             patience_counter = 0
             # Save the model
@@ -161,20 +230,51 @@ if __name__ == "__main__":
                 'optimizer_state_dict': optimizer.state_dict(),
                 'train_loss': avg_train_loss,
                 'val_loss': avg_val_loss,
-            }, 'accel_transformer.pth')
-            print(f'New best model saved! Validation Loss: {avg_val_loss:.4f}')
+                'val_f1': f1,
+            }, 'best_accel_transformer.pth')
+            print(f'New best model saved! Validation F1: {f1:.4f}')
         else:
             patience_counter += 1
         
         # Early stopping check
-        if patience_counter >= PATIENCE:
+        if patience_counter >= args.patience:
             print(f'Early stopping triggered after {epoch+1} epochs')
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_loss': avg_train_loss,
+                'val_loss': avg_val_loss,
+                'val_f1': f1,
+            }, 'last_accel_transformer.pth')
+            last_epoch = epoch
             break
         print()
+
+    print("testing most recent model:")
+    avg_val_loss, f1 = evaluate_model(model, test_loader, criterion, name="last_model", verbose=True, graph=True)
+    if last_epoch != args.epochs:
+        torch.save({
+            'epoch': args.epochs,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_loss': avg_train_loss,
+            'val_loss': avg_val_loss,
+            'val_f1': f1,
+        }, 'last_accel_transformer.pth')
+        
     
+    
+    print("testing best model:")
+    checkpoint = torch.load("best_accel_transformer.pth")
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    avg_val_loss, f1 = evaluate_model(model, test_loader, criterion, name="best_model", verbose=True, graph=True)
+    exit()
+
     # Load the best model
-    if best_model_state is not None:
-        model.load_state_dict(best_model_state)
+    # if best_model_state is not None:
+    #     model.load_state_dict(best_model_state)
     
     model.eval()
     eval_metrics = {}

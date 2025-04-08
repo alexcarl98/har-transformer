@@ -37,23 +37,24 @@ class PositionalEncoding(nn.Module):
 
 # === Transformer Model for HAR ===
 class AccelTransformer(nn.Module):
-    def __init__(self, d_model=64, n_seq_features=3, n_meta_features=3, nhead=4, num_layers=2, dropout=0.1, num_classes=6):
+    def __init__(self, d_model=128, fc_hidden_dim=128, 
+                 in_seq_dim=3, in_meta_dim=3, nhead=4, 
+                 num_layers=2, dropout=0.1, num_classes=6):
         super().__init__()
-        self.seq_embedding = nn.Linear(n_seq_features, d_model)             # Input: (batch, seq_len, 3)
+        self.seq_proj = nn.Linear(in_seq_dim, d_model)             # Input: (batch, seq_len, 3)
         self.pos_encoder = PositionalEncoding(d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead,
                                                    dim_feedforward=128, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
-        # self.energy_proj = nn.Linear(1, d_model)
-        self.meta_proj = nn.Linear(n_meta_features, d_model)
+        self.meta_proj = nn.Linear(in_meta_dim, d_model)
 
         self.classifier = nn.Sequential(
-            nn.Linear(d_model * 2, 128),
+            nn.Linear(d_model * 2, fc_hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128, num_classes)
+            nn.Linear(fc_hidden_dim, num_classes)
         )
 
     def forward(self, x_seq, x_meta):
@@ -61,7 +62,7 @@ class AccelTransformer(nn.Module):
         x_seq: (batch, seq_len=5, 3)
         x_meta: (batch, n_meta_features)
         """
-        x = self.seq_embedding(x_seq)         # (batch, seq_len, d_model)
+        x = self.seq_proj(x_seq)         # (batch, seq_len, d_model)
         x = self.pos_encoder(x)               # (batch, seq_len, d_model)
 
         x = x.permute(1, 0, 2)                # (seq_len, batch, d_model)

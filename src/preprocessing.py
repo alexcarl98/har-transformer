@@ -25,10 +25,10 @@ def extract_window_signal_features(window):
     freq_energy = list(np.mean(fft_mag**2, axis=0))
 
     extracted = [*mean_mag, *std_mag, *freq_mean, *freq_std, *freq_energy]
-    assert len(extracted) == SZ_META_DATA
+    # assert len(extracted) == SZ_META_DATA
     return extracted
 
-def load_and_process_data(file_path, sensor_loc='waist'):
+def load_and_process_data(file_path, args, sensor_loc='waist'):
     feature_cols = [f'{sensor_loc}_x', f'{sensor_loc}_y', f'{sensor_loc}_z']
     df = pd.read_csv(file_path, parse_dates=[TIME_COL])
 
@@ -45,15 +45,16 @@ def load_and_process_data(file_path, sensor_loc='waist'):
 
     # Process each contiguous block
     for _, group in df.groupby('class_change'):
-        if len(group) >= WINDOW_SIZE:
+        if len(group) >= args.window_size:
             features = group[feature_cols].values
             label = group[LABELS_COL].iloc[0]
             
             # Sliding window
-            for i in range(0, len(features) - WINDOW_SIZE + 1, STRIDE):
-                window = features[i:i+WINDOW_SIZE]
+            for i in range(0, len(features) - args.window_size + 1, args.stride):
+                window = features[i:i+args.window_size]
                 meta_data = extract_window_signal_features(window)
-
+                assert len(meta_data) == args.in_meta_dim
+                
                 X_windows.append(window)
                 X_meta.append(meta_data)
                 y_labels.append(label)
@@ -64,10 +65,10 @@ def load_and_process_data(file_path, sensor_loc='waist'):
     y = np.array(y_labels)                      # (n_windows,)
     return X, X_meta, y
 
-def split_data(X, X_meta, y_encoded, test_size=TEST_SIZE):
+def split_data(X, X_meta, y_encoded, args):
     idx_train, idx_test = train_test_split(
-        np.arange(len(X)), test_size=test_size, 
-        random_state=RANDOM_SEED, stratify=y_encoded)
+        np.arange(len(X)), test_size=args.test_size, 
+        random_state=args.random_seed, stratify=y_encoded)
 
     X_train, X_test = X[idx_train], X[idx_test]
     X_meta_train, X_meta_test = X_meta[idx_train], X_meta[idx_test]

@@ -55,8 +55,8 @@ print(f"Listening for MPU6050 data on UDP {UDP_PORT}...")
 
 model = AccelTransformer(
     num_classes=NUM_CLS,
-    n_seq_features=SZ_SEQ_DATA,
-    n_meta_features=SZ_META_DATA
+    in_seq_dim=SZ_SEQ_DATA,
+    in_meta_dim=SZ_META_DATA
 ).to(DEVICE)
 
 checkpoint = torch.load('accel_transformer.pth')
