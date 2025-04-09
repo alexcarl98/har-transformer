@@ -8,12 +8,26 @@ import pandas as pd
 import torch
 
 @dataclass
+class DataConfig:
+    data_dir: str = "raw_data/"
+    middle_percentage: float = 0.85
+    encoding_method: Literal["one_hot", "label_encoding"] = "one_hot"
+    sensor_loc: List[str] = field(default_factory=lambda: ["waist", "ankle", "wrist"])
+    ft_col: List[str] = field(default_factory=lambda: ["x", "y", "z"])
+    window_size: int = 100
+    stride: int = 10
+
+
+@dataclass
 class TConfig:
     """Configuration for the experiment."""
     data_dir: str = "raw_data/"
     output_dir: str = "doc/latex/figure/"
+    model_out_dir: str = "models/"
     random_seed: int = 42
     sensor_loc: List[str] = field(default_factory=lambda: ["waist", "ankle", "wrist"])
+    ft_col: List[str] = field(default_factory=lambda: ["x", "y", "z"])
+    extracted_features: List[str] = field(default_factory=lambda: ["mean", "std"])
     window_size: int = 100
     stride: int = 10
     test_size: float = 0.4
@@ -25,8 +39,6 @@ class TConfig:
     epochs: int = 20
     d_model: int = 128
     fc_hidden_dim: int = 128
-    in_seq_dim: int = 3
-    in_meta_dim: int = 3
     nhead: int = 4
     num_layers: int = 2
     dropout: float = 0.1
@@ -41,6 +53,14 @@ class TConfig:
 
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
+    
+    @property
+    def in_seq_dim(self):
+        return len(self.ft_col)
+
+    @property
+    def in_meta_dim(self):
+        return len(self.extracted_features)*self.in_seq_dim
 
 
 if __name__ == "__main__":

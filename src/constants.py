@@ -10,6 +10,8 @@ dataset_numbers = ['001', '002', '004', '008','010','011','012',
                    '021','022','024','025', '031', '032', '033', 
                    '034','035','036', '037', '038', '039', '040', '041']
 
+all_subjects = dataset_numbers + incomplete
+
 data_dir = "raw_data/"
 figure_output_dir = "doc/latex/figure/"
 if not os.path.exists(data_dir):

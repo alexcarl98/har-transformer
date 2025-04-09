@@ -14,10 +14,12 @@ def encode_labels(y):
     return y_int, encoder_dict, decoder_dict
 
 def extract_window_signal_features(window):
+    window_size_halved = len(window) // 2
     fft_values = fft(window)
-    fft_mag = np.abs(fft_values)[:WINDOW_SIZE//2]
+    fft_mag = np.abs(fft_values)[:window_size_halved]
 
     mean_mag = list(np.mean(window, axis=0))
+    
     std_mag = list(np.std(window, axis=0))
 
     freq_mean = list(np.mean(fft_mag, axis=0))
@@ -25,11 +27,33 @@ def extract_window_signal_features(window):
     freq_energy = list(np.mean(fft_mag**2, axis=0))
 
     extracted = [*mean_mag, *std_mag, *freq_mean, *freq_std, *freq_energy]
-    # assert len(extracted) == SZ_META_DATA
+    return extracted
+
+def selective_extract_window_signal_features(window, args):
+    window_size_halved = len(window) // 2
+    fft_values = fft(window)
+    fft_mag = np.abs(fft_values)[:window_size_halved]
+    extracted = []
+    if "mean" in args.extracted_features:
+        mean_mag = list(np.mean(window, axis=0))
+        extracted.extend(mean_mag)
+    if "std" in args.extracted_features:
+        std_mag = list(np.std(window, axis=0))
+        extracted.extend(std_mag)
+    if "freq_mean" in args.extracted_features:
+        freq_mean = list(np.mean(fft_mag, axis=0))
+        extracted.extend(freq_mean)
+    if "freq_std" in args.extracted_features:
+        freq_std = list(np.std(fft_mag, axis=0))
+        extracted.extend(freq_std)
+    if "freq_energy" in args.extracted_features:
+        freq_energy = list(np.sum(fft_mag**2, axis=0)/len(window))
+        extracted.extend(freq_energy)
+
     return extracted
 
 def load_and_process_data(file_path, args, sensor_loc='waist'):
-    feature_cols = [f'{sensor_loc}_x', f'{sensor_loc}_y', f'{sensor_loc}_z']
+    feature_cols = [f'{sensor_loc}_{ft}' for ft in args.ft_col]
     df = pd.read_csv(file_path, parse_dates=[TIME_COL])
 
     # Optional: Sort by time if needed
@@ -52,9 +76,8 @@ def load_and_process_data(file_path, args, sensor_loc='waist'):
             # Sliding window
             for i in range(0, len(features) - args.window_size + 1, args.stride):
                 window = features[i:i+args.window_size]
-                meta_data = extract_window_signal_features(window)
+                meta_data = selective_extract_window_signal_features(window, args)
                 assert len(meta_data) == args.in_meta_dim
-                
                 X_windows.append(window)
                 X_meta.append(meta_data)
                 y_labels.append(label)
@@ -75,10 +98,6 @@ def split_data(X, X_meta, y_encoded, args):
     y_train, y_test = y_encoded[idx_train], y_encoded[idx_test]
 
     return X_train, X_meta_train, y_train, X_test, X_meta_test, y_test
-
-
-
-
 
 
 def zero_crossing(df, column_name):

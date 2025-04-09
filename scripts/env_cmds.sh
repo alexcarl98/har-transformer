@@ -7,3 +7,4 @@ conda install pytorch -c pytorch
 conda install -c conda-forge pytest
 
 pip install ahrs
+pip install --upgrade wandb

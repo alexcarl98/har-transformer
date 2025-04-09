@@ -1,12 +1,47 @@
 model: &base_model
   data_dir: "raw_data/"
   output_dir: "doc/latex/figure/"
+  model_out_dir: "models/"
   random_seed: 42
   # ==== Data Processing ====
   sensor_loc:
     - "waist"
     - "ankle"
     - "wrist"
+  ft_col:
+    - "x"
+    - "y"
+    - "z"
+    - "vm"
+  extracted_features:
+    - "mean"
+    - "std"
+    - "freq_mean"
+    - "freq_std"
+    # - "freq_energy"
+  window_size: 100
+  stride: 5
+
+data_config:
+  data_dir: "har_data/"
+  middle_percentage: 0.85
+  encoding_method: "one_hot"    # one_hot, label_encoding
+  sensor_loc:
+    - "waist"
+    - "ankle"
+    - "wrist"
+  ft_col:
+    - "x"
+    - "y"
+    - "z"
+    - "vm"
+  extracted_features:
+    - "mean"
+    - "std"
+    - "freq_mean"
+    - "freq_std"
+    # - "freq_energy"
+  
   window_size: 100
   stride: 5
 
@@ -23,14 +58,12 @@ transformer:
   test_size: 0.2
   num_classes: 6
   batch_size: 64
-  patience: 20
+  patience: 3
   learning_rate: 0.001
   weight_decay: 0.0
-  epochs: 40
+  epochs: 3
   d_model: 64
   fc_hidden_dim: 128
-  in_seq_dim: 3
-  in_meta_dim: 15
   nhead: 4
   num_layers: 2
   dropout: 0.1

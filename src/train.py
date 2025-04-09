@@ -9,23 +9,32 @@ import numpy as np
 import random
 from tqdm import tqdm
 from constants import *
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, accuracy_score
 from preprocessing import load_and_process_data, split_data, encode_labels
 from har_model import AccelTransformer, HARWindowDataset
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import label_binarize
+from sklearn.metrics import roc_curve, auc
+import logging
 from utils import TConfig
 import yaml
+import wandb
 
 
+run = wandb.init(
+    entity="alex-alvarez1903-loyola-marymount-university",
+    project="HAR-PosTransformer",
+)
 # ==== Data Processing ====
 raw_data_urls = [f"{data_dir}{num}.csv" for num in dataset_numbers]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def evaluate_model(model, data_loader, criterion, name="model",verbose=False, graph=False):
     model.eval()
-    loss = 0.0
+    total_loss = 0.0
     predictions = []
     true = []
+    all_outputs = []
     print(f"===(Validation)===")
     with torch.no_grad():
         pbar = tqdm(data_loader)
@@ -35,27 +44,55 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
             loss = criterion(outputs, y_true)
             
             # Accumulate batch loss
-            loss += loss.item() * x_seq.size(0)
+            total_loss += loss.item() * x_seq.size(0)
             
             # Get predictions
             pred_classes = torch.argmax(outputs, dim=1)
             predictions.extend(pred_classes.cpu().numpy())
             true.extend(y_true.cpu().numpy())
             
+            # Store all outputs
+            all_outputs.append(outputs.cpu())
+            
             # Update progress bar
-            current_avg_loss = loss / ((batch_idx + 1) * x_seq.size(0))
+            current_avg_loss = total_loss / ((batch_idx + 1) * x_seq.size(0))
             pbar.set_description(f"Loss: {current_avg_loss:.4f}")
+
+    # After the loop, concatenate all outputs
+    all_outputs = torch.cat(all_outputs, dim=0)
 
     # Calculate validation metrics
     predictions = np.array(predictions)
     true = np.array(true)
     precision, recall, f1, _ = precision_recall_fscore_support(true, predictions, average='macro')
-    avg_loss = loss / len(data_loader.dataset)
+    avg_loss = total_loss / len(data_loader.dataset)
 
     if verbose:
         print(classification_report(true, predictions))
 
     if graph:
+        report = classification_report(true, predictions, output_dict=True)
+        # Log metrics for each class
+        metrics = {}
+        for class_name, class_metrics in report.items():
+            if isinstance(class_metrics, dict):  # Skip 'accuracy' which isn't a dict
+                for metric_name, value in class_metrics.items():
+                    metrics[f"{class_name}/{metric_name}"] = value
+        
+        # Log overall metrics
+        metrics.update({
+            'overall/accuracy': report['accuracy'],
+            'overall/macro_avg_precision': report['macro avg']['precision'],
+            'overall/macro_avg_recall': report['macro avg']['recall'],
+            'overall/macro_avg_f1': report['macro avg']['f1-score'],
+            'overall/weighted_avg_precision': report['weighted avg']['precision'],
+            'overall/weighted_avg_recall': report['weighted avg']['recall'],
+            'overall/weighted_avg_f1': report['weighted avg']['f1-score'],
+        })
+        # Log to wandb
+        run.log(metrics)
+
+        # Log confusion matrix
         cm = confusion_matrix(true, predictions)
         plt.figure(figsize=(10, 8))
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -65,6 +102,44 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
         plt.ylabel('True')
         plt.title('Confusion Matrix (Raw Data)')
         plt.savefig(f'{name}_confusion_matrix.png')
+        im = plt.imread(f'{name}_confusion_matrix.png')
+        run.log({
+            f"{name}_confusion_matrix": wandb.Image(im, caption=f"{name} Confusion Matrix")
+        })
+
+        # Binarize the labels for ROC curve
+        n_classes = len(decoder_dict)
+        true_bin = label_binarize(true, classes=list(decoder_dict.values()))
+        
+        # Get prediction probabilities for all data
+        pred_proba = torch.softmax(all_outputs, dim=1).numpy()
+        
+        # Plot ROC curves
+        plt.figure(figsize=(10, 8))
+        colors = plt.cm.get_cmap('Set3')(np.linspace(0, 1, n_classes))
+        
+        for i, (label, color) in enumerate(zip(decoder_dict.values(), colors)):
+            fpr, tpr, _ = roc_curve(true_bin[:, i], pred_proba[:, i])
+            roc_auc = auc(fpr, tpr)
+            plt.plot(fpr, tpr, color=color, lw=2,
+                    label=f'{label} (AUC = {roc_auc:.2f})')
+        
+        plt.plot([0, 1], [0, 1], 'k--', lw=2)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC Curves (One-vs-Rest)')
+        plt.legend(loc="lower right")
+        
+        # Save and log the ROC curve
+        plt.savefig(f'{name}_roc_curves.png')
+        roc_im = plt.imread(f'{name}_roc_curves.png')
+        run.log({
+            f"{name}_roc_curves": wandb.Image(roc_im, caption=f"{name} ROC Curves")
+        })
+        plt.close()
+        
     
     return avg_loss, f1
     # print(f"Validation - Avg Loss: {avg_loss:.4f}, F1 Score: {f1:.4f}")
@@ -73,8 +148,11 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
 
 
 if __name__ == "__main__":
+    
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
+
+    run.config.update(config['transformer'])
 
     args = TConfig(**config['transformer'])
 
@@ -185,6 +263,10 @@ if __name__ == "__main__":
         # Training phase
         model.train()
         train_loss = 0.0
+        current_avg_loss = 0.0
+        current_accuracy = 0.0
+        predictions = []
+        true = []
         correct = 0
         total = 0
         print(f'Epoch {epoch+1}/{args.epochs}:')
@@ -193,22 +275,26 @@ if __name__ == "__main__":
         for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
             x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
 
+            # Training specific steps
             optimizer.zero_grad()
             outputs = model(x_seq, x_meta)
             loss = criterion(outputs, y_true)
             loss.backward()
             optimizer.step()
 
-            # Accumulate batch loss
-            train_loss += loss.item() * x_seq.size(0)  # multiply by batch size
-            _, predicted = torch.max(outputs, 1)
-            correct += (predicted == y_true).sum().item()
+            # Consistent prediction handling
+            pred_classes = torch.argmax(outputs, dim=1)
+            predictions.extend(pred_classes.cpu().numpy())
+            true.extend(y_true.cpu().numpy())
+            
+            # Accumulate batch loss (consistent with eval loop)
+            train_loss += loss.item() * x_seq.size(0)
             total += y_true.size(0)
             
-            # Update progress bar with current loss and accuracy
-            current_avg_loss = train_loss / total  # divide by total samples seen
-            current_accuracy = 100. * correct / total
+            # Update progress bar
+            current_avg_loss = train_loss / ((batch_idx + 1) * x_seq.size(0))
             if batch_idx % 10 == 0 or batch_idx == len(train_loader) - 1:
+                current_accuracy = 100. * accuracy_score(true, predictions)
                 pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%")
 
         avg_train_loss = train_loss / total
@@ -217,10 +303,17 @@ if __name__ == "__main__":
         # Validation phase
         avg_val_loss, f1 = evaluate_model(model, val_loader, criterion)
         print(f"Validation - Avg Loss: {avg_val_loss:.4f}, F1 Score: {f1:.4f}")
+        run.log({
+            "train_loss": avg_train_loss,
+            "train_accuracy": train_accuracy,
+            "val_loss": avg_val_loss,
+            "val_f1": f1,
+        })
 
         # Save best model based on F1 score
         if f1 > best_val_f1:
             best_val_f1 = f1
+
             best_model_state = model.state_dict().copy()
             patience_counter = 0
             # Save the model
@@ -252,24 +345,27 @@ if __name__ == "__main__":
         print()
 
     print("testing most recent model:")
-    avg_val_loss, f1 = evaluate_model(model, test_loader, criterion, name="last_model", verbose=True, graph=True)
+    last_epoch = args.epochs if last_epoch == 0 else last_epoch
+
+    last_avg_loss, last_f1 = evaluate_model(model, test_loader, criterion, name=f"last_model_{last_epoch}", verbose=True, graph=True)
     if last_epoch != args.epochs:
         torch.save({
             'epoch': args.epochs,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'train_loss': avg_train_loss,
-            'val_loss': avg_val_loss,
-            'val_f1': f1,
+            'val_loss': last_avg_loss,
+            'val_f1': last_f1,
         }, 'last_accel_transformer.pth')
-        
-    
-    
+            
     print("testing best model:")
     checkpoint = torch.load("best_accel_transformer.pth")
 
     model.load_state_dict(checkpoint['model_state_dict'])
-    avg_val_loss, f1 = evaluate_model(model, test_loader, criterion, name="best_model", verbose=True, graph=True)
+    best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, name=f"best_model_{checkpoint['epoch']}", verbose=True, graph=True)
+
+    run.finish()
+
     exit()
 
     # Load the best model
