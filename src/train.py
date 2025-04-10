@@ -20,11 +20,24 @@ from utils import TConfig
 import yaml
 import wandb
 
+DEBUG_MODE = True
+run = None
 
-run = wandb.init(
-    entity="alex-alvarez1903-loyola-marymount-university",
-    project="HAR-PosTransformer",
-)
+ANSI_CYAN = "\033[96m"
+ANSI_GREEN = "\033[92m"
+ANSI_BLUE = "\033[94m"
+ANSI_RED = "\033[91m"
+ANSI_YELLOW = "\033[93m"
+ANSI_MAGENTA = "\033[95m"
+ANSI_RESET = "\033[0m"
+
+if not DEBUG_MODE:
+    run = wandb.init(
+        entity="alex-alvarez1903-loyola-marymount-university",
+        project="HAR-PosTransformer",
+    )
+
+
 # ==== Data Processing ====
 raw_data_urls = [f"{data_dir}{num}.csv" for num in dataset_numbers]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -90,7 +103,8 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
             'overall/weighted_avg_f1': report['weighted avg']['f1-score'],
         })
         # Log to wandb
-        run.log(metrics)
+        if not DEBUG_MODE:
+            run.log(metrics)
 
         # Log confusion matrix
         cm = confusion_matrix(true, predictions)
@@ -103,9 +117,10 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
         plt.title('Confusion Matrix (Raw Data)')
         plt.savefig(f'{name}_confusion_matrix.png')
         im = plt.imread(f'{name}_confusion_matrix.png')
-        run.log({
-            f"{name}_confusion_matrix": wandb.Image(im, caption=f"{name} Confusion Matrix")
-        })
+        if not DEBUG_MODE:
+            run.log({
+                f"{name}_confusion_matrix": wandb.Image(im, caption=f"{name} Confusion Matrix")
+            })
 
         # Binarize the labels for ROC curve
         n_classes = len(decoder_dict)
@@ -138,9 +153,10 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
         # Save and log the ROC curve
         plt.savefig(f'{name}_roc_curves.png')
         roc_im = plt.imread(f'{name}_roc_curves.png')
-        run.log({
-            f"{name}_roc_curves": wandb.Image(roc_im, caption=f"{name} ROC Curves")
-        })
+        if not DEBUG_MODE:
+            run.log({
+                f"{name}_roc_curves": wandb.Image(roc_im, caption=f"{name} ROC Curves")
+            })
         plt.close()
         
     
@@ -155,7 +171,10 @@ if __name__ == "__main__":
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
 
-    run.config.update(config['transformer'])
+    if not DEBUG_MODE:
+        run.config.update(config['transformer'])
+    else:
+        print(f"{ANSI_CYAN}DEBUG MODE: Will not log to wandb{ANSI_RESET}")
 
     args = TConfig(**config['transformer'])
 
@@ -309,12 +328,14 @@ if __name__ == "__main__":
         # Validation phase
         avg_val_loss, f1 = evaluate_model(model, val_loader, criterion)
         print(f"Validation - Avg Loss: {avg_val_loss:.4f}, F1 Score: {f1:.4f}")
-        run.log({
-            "train_loss": avg_train_loss,
-            "train_accuracy": train_accuracy,
-            "val_loss": avg_val_loss,
-            "val_f1": f1,
-        })
+
+        if not DEBUG_MODE:
+            run.log({
+                "train_loss": avg_train_loss,
+                "train_accuracy": train_accuracy,
+                "val_loss": avg_val_loss,
+                "val_f1": f1,
+            })
 
         # Save best model based on F1 score
         if f1 > best_val_f1:
@@ -370,7 +391,8 @@ if __name__ == "__main__":
     model.load_state_dict(checkpoint['model_state_dict'])
     best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, name=f"best_model_ep{checkpoint['epoch']}", verbose=True, graph=True)
 
-    run.finish()
+    if not DEBUG_MODE:
+        run.finish()
 
     exit()
 

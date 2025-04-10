@@ -27,37 +27,7 @@ model: &base_model
 
   window_size: 100
   stride: 5
-
-# data_config:
-#   data_dir: "har_data/"
-#   middle_percentage: 0.85
-#   encoding_method: "one_hot"    # one_hot, label_encoding
-#   sensor_loc:
-#     - "waist"
-#     - "ankle"
-#     - "wrist"
-#   ft_col:
-#     - "x"
-#     - "y"
-#     - "z"
-#     - "vm"
-#   extracted_features:
-#     - "mean"
-#     - "std"
-#     # - "freq_mean"
-#     # - "freq_std"
-#     # - "freq_energy"
-#   classes:
-#     - "downstairs"
-#     - "jog_treadmill"
-#     - "upstairs"
-#     # - "walk_mixed"
-#     # - "walk_sidewalk"
-#     - "walk_treadmill"
   
-#   window_size: 100
-#   stride: 5
-
 # ==== Model Training ====
 random_forest:
   <<: *base_model
