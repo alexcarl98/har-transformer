@@ -22,6 +22,7 @@ class DataConfig:
 class TConfig:
     """Configuration for the experiment."""
     data_dir: str = "raw_data/"
+    out_data_dir: str = "processed_data/"
     output_dir: str = "doc/latex/figure/"
     model_out_dir: str = "models/"
     random_seed: int = 42
@@ -31,6 +32,7 @@ class TConfig:
     classes: List[str] = field(default_factory=lambda: ["downstairs", "jog_treadmill", "upstairs", "walk_mixed", "walk_sidewalk", "walk_treadmill"])
     window_size: int = 100
     stride: int = 10
+    save_pkl: bool = False
     test_size: float = 0.4
     batch_size: int = 16
     patience: int = 15
@@ -44,12 +46,15 @@ class TConfig:
     dropout: float = 0.1
     load_model_path: str = ''
 
-    def __postinit__(self):
+    def __post_init__(self):
         if self.load_model_path:
             assert os.path.exists(self.load_model_path), f"Model file {self.load_model_path} does not exist."
         
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
+
+        if not os.path.exists(self.out_data_dir):
+            os.makedirs(self.out_data_dir)
 
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
@@ -65,10 +70,14 @@ class TConfig:
     @property
     def num_classes(self):
         return len(self.classes)
+    
+    @classmethod
+    def from_yaml(cls, yaml_path: str):
+        with open(yaml_path, "r") as f:
+            config = yaml.safe_load(f)
+        return cls(**config['transformer'])
 
 
 if __name__ == "__main__":
-    with open("config.yml", "r") as f:
-        config = yaml.safe_load(f)
-    # print(config)
-    print(config['transformer'])
+    config = TConfig.from_yaml("config.yml")
+    print(config)
