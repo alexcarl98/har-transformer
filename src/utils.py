@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, Tuple, List, Literal
 import numpy as np
 import pandas as pd
 import torch
+from datetime import datetime
 
 @dataclass
 class DataConfig:
@@ -47,6 +48,11 @@ class TConfig:
     load_model_path: str = ''
 
     def __post_init__(self):
+        self.time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.model_sub_dir = f"run_{self.time_stamp}"
+        self.figure_out_dir = os.path.join(self.model_out_dir, self.model_sub_dir)
+        self.weights_out_dir = os.path.join(self.model_out_dir, self.model_sub_dir, "weights")
+        
         if self.load_model_path:
             assert os.path.exists(self.load_model_path), f"Model file {self.load_model_path} does not exist."
         
@@ -58,6 +64,10 @@ class TConfig:
 
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
+
+        os.makedirs(self.figure_out_dir, exist_ok=True)
+        os.makedirs(self.weights_out_dir, exist_ok=True)
+
     
     @property
     def in_seq_dim(self):
@@ -70,7 +80,7 @@ class TConfig:
     @property
     def num_classes(self):
         return len(self.classes)
-    
+
     @classmethod
     def from_yaml(cls, yaml_path: str):
         with open(yaml_path, "r") as f:
@@ -81,3 +91,5 @@ class TConfig:
 if __name__ == "__main__":
     config = TConfig.from_yaml("config.yml")
     print(config)
+    print(config.figure_out_dir)
+    print(config.weights_out_dir)
