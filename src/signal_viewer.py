@@ -7,13 +7,19 @@ from scipy.fft import fft, ifft, fftfreq
 from scipy.signal import find_peaks
 import seaborn as sns
 import os
+import yaml
+from utils import TConfig
+
+
+transformer_config = TConfig.from_yaml("config.yml")
+
+print(transformer_config)
 
 π = np.pi
 subject_id = "002"
 data_dir = "har_data"
-sensor_loc = ["waist", "ankle", "wrist"]  # All possible sensors
-classes = ["upstairs", "downstairs", "jog_treadmill", 
-           "walk_treadmill", "walk_mixed", "walk_sidewalk"]
+sensor_loc = transformer_config.sensor_loc
+classes = transformer_config.classes
 
 time_col = 'time'
 
@@ -32,6 +38,12 @@ activity_groups = data.groupby(activity_changes)
 available_sensors = [sensor for sensor in sensor_loc if f'{sensor}_x' in data.columns]
 n_sensors = len(available_sensors)
 unique_activities = data['activity'].unique()
+unique_activities = [activity for activity in unique_activities if activity in classes]
+fts = transformer_config.ft_col
+ft_axis_names= [f"{ft.upper()}-axis" for ft in fts]
+colors = ['red', 'green', 'blue', 'purple']
+ft_cols = colors[:len(fts)]
+
 
 for activity in unique_activities:
     # Get all segments for this activity
@@ -54,11 +66,12 @@ for activity in unique_activities:
         for segment in activity_segments:
             # Calculate relative time in seconds for this segment
             relative_time = (segment[time_col] - segment[time_col].iloc[0]).dt.total_seconds()
-            
             # Plot acceleration data
-            ax.plot(relative_time, segment[f'{sensor}_x'], 'red', label='X-axis', linewidth=1, alpha=0.7)
-            ax.plot(relative_time, segment[f'{sensor}_y'], 'green', label='Y-axis', linewidth=1, alpha=0.7)
-            ax.plot(relative_time, segment[f'{sensor}_z'], 'blue', label='Z-axis', linewidth=1, alpha=0.7)
+            for ft, axis_name, color in zip(fts, ft_axis_names, ft_cols):
+                col = f'{sensor}_{ft}'
+                signal_data = segment[col].values
+                ax.plot(relative_time, signal_data, color, 
+                        label=axis_name, linewidth=1, alpha=0.7)
         
         ax.set_title(f'{sensor.capitalize()} Accelerometer Data')
         ax.set_xlabel('Time (s)')
