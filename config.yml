@@ -16,34 +16,47 @@ model: &base_model
   extracted_features:
     - "mean"
     - "std"
-    - "freq_mean"
-    - "freq_std"
-    # - "freq_energy"
+  
+  classes:
+    - "downstairs"
+    - "jog_treadmill"
+    - "upstairs"
+    - "walk_treadmill"
+    # - "walk_mixed"
+    # - "walk_sidewalk"
+
   window_size: 100
   stride: 5
 
-data_config:
-  data_dir: "har_data/"
-  middle_percentage: 0.85
-  encoding_method: "one_hot"    # one_hot, label_encoding
-  sensor_loc:
-    - "waist"
-    - "ankle"
-    - "wrist"
-  ft_col:
-    - "x"
-    - "y"
-    - "z"
-    - "vm"
-  extracted_features:
-    - "mean"
-    - "std"
-    - "freq_mean"
-    - "freq_std"
-    # - "freq_energy"
+# data_config:
+#   data_dir: "har_data/"
+#   middle_percentage: 0.85
+#   encoding_method: "one_hot"    # one_hot, label_encoding
+#   sensor_loc:
+#     - "waist"
+#     - "ankle"
+#     - "wrist"
+#   ft_col:
+#     - "x"
+#     - "y"
+#     - "z"
+#     - "vm"
+#   extracted_features:
+#     - "mean"
+#     - "std"
+#     # - "freq_mean"
+#     # - "freq_std"
+#     # - "freq_energy"
+#   classes:
+#     - "downstairs"
+#     - "jog_treadmill"
+#     - "upstairs"
+#     # - "walk_mixed"
+#     # - "walk_sidewalk"
+#     - "walk_treadmill"
   
-  window_size: 100
-  stride: 5
+#   window_size: 100
+#   stride: 5
 
 # ==== Model Training ====
 random_forest:
@@ -56,12 +69,11 @@ random_forest:
 transformer:
   <<: *base_model
   test_size: 0.2
-  num_classes: 6
   batch_size: 64
-  patience: 3
+  patience: 10
   learning_rate: 0.001
-  weight_decay: 0.0
-  epochs: 3
+  weight_decay: 0.001
+  epochs: 30
   d_model: 64
   fc_hidden_dim: 128
   nhead: 4

@@ -4,13 +4,15 @@ import os
 RANDOM_SEED = 42
 
 # ===== Raw Data Processing =====
-incomplete = ['026','027', '028','029', '030']      # missing ankle data for these subjects
+no_ankle = ['026','027', '028','029', '030']      # missing ankle data for these subjects
+dont_have_jogging = ['013', '037', '038']
+incomplete = dont_have_jogging + no_ankle
 dataset_numbers = ['001', '002', '004', '008','010','011','012',
-                   '013','015','016','017', '018', '019', '020',
+                   '015','016','017', '018', '019', '020',
                    '021','022','024','025', '031', '032', '033', 
-                   '034','035','036', '037', '038', '039', '040', '041']
-
-all_subjects = dataset_numbers + incomplete
+                   '034','035','036', '039', '040', '041']
+dataset_numbers = no_ankle + dont_have_jogging + dataset_numbers
+all_subjects = dataset_numbers + no_ankle
 
 data_dir = "raw_data/"
 figure_output_dir = "doc/latex/figure/"

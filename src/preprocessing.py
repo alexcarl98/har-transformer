@@ -72,6 +72,10 @@ def load_and_process_data(file_path, args, sensor_loc='waist'):
         if len(group) >= args.window_size:
             features = group[feature_cols].values
             label = group[LABELS_COL].iloc[0]
+
+            if label['activity'] not in args.classes:
+                # print(f"Skipping label {label} because it is not in the classes list")
+                continue
             
             # Sliding window
             for i in range(0, len(features) - args.window_size + 1, args.stride):

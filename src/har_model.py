@@ -35,6 +35,7 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1), :]
         return x
 
+
 # === Transformer Model for HAR ===
 class AccelTransformer(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 

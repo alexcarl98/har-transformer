@@ -28,10 +28,10 @@ class TConfig:
     sensor_loc: List[str] = field(default_factory=lambda: ["waist", "ankle", "wrist"])
     ft_col: List[str] = field(default_factory=lambda: ["x", "y", "z"])
     extracted_features: List[str] = field(default_factory=lambda: ["mean", "std"])
+    classes: List[str] = field(default_factory=lambda: ["downstairs", "jog_treadmill", "upstairs", "walk_mixed", "walk_sidewalk", "walk_treadmill"])
     window_size: int = 100
     stride: int = 10
     test_size: float = 0.4
-    num_classes: int = 6
     batch_size: int = 16
     patience: int = 15
     learning_rate: float = 1e-3
@@ -61,6 +61,10 @@ class TConfig:
     @property
     def in_meta_dim(self):
         return len(self.extracted_features)*self.in_seq_dim
+
+    @property
+    def num_classes(self):
+        return len(self.classes)
 
 
 if __name__ == "__main__":

@@ -109,7 +109,10 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
 
         # Binarize the labels for ROC curve
         n_classes = len(decoder_dict)
-        true_bin = label_binarize(true, classes=list(decoder_dict.values()))
+        # Convert classes to consecutive integers starting from 0
+        class_mapping = {c: i for i, c in enumerate(sorted(decoder_dict.values()))}
+        true_mapped = np.array([class_mapping[decoder_dict[t]] for t in true])
+        true_bin = label_binarize(true_mapped, classes=range(n_classes))
         
         # Get prediction probabilities for all data
         pred_proba = torch.softmax(all_outputs, dim=1).numpy()
@@ -118,10 +121,10 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
         plt.figure(figsize=(10, 8))
         colors = plt.cm.get_cmap('Set3')(np.linspace(0, 1, n_classes))
         
-        for i, (label, color) in enumerate(zip(decoder_dict.values(), colors)):
-            fpr, tpr, _ = roc_curve(true_bin[:, i], pred_proba[:, i])
+        for i, (class_idx, label) in enumerate(sorted(decoder_dict.items())):
+            fpr, tpr, _ = roc_curve(true_bin[:, class_mapping[label]], pred_proba[:, class_idx])
             roc_auc = auc(fpr, tpr)
-            plt.plot(fpr, tpr, color=color, lw=2,
+            plt.plot(fpr, tpr, color=colors[i], lw=2,
                     label=f'{label} (AUC = {roc_auc:.2f})')
         
         plt.plot([0, 1], [0, 1], 'k--', lw=2)
@@ -245,6 +248,8 @@ if __name__ == "__main__":
                       weight_decay=args.weight_decay)
     
     best_val_f1 = 0.0
+
+
     
     if args.load_model_path:
         checkpoint = torch.load(args.load_model_path)
@@ -253,7 +258,8 @@ if __name__ == "__main__":
         best_val_f1 = checkpoint['val_f1']
 
     criterion = nn.CrossEntropyLoss()
-
+    
+    
     # === Training loop ===
     best_model_state = None
     patience_counter = 0
@@ -347,7 +353,7 @@ if __name__ == "__main__":
     print("testing most recent model:")
     last_epoch = args.epochs if last_epoch == 0 else last_epoch
 
-    last_avg_loss, last_f1 = evaluate_model(model, test_loader, criterion, name=f"last_model_{last_epoch}", verbose=True, graph=True)
+    last_avg_loss, last_f1 = evaluate_model(model, test_loader, criterion, name=f"last_model_ep{last_epoch}", verbose=True, graph=True)
     if last_epoch != args.epochs:
         torch.save({
             'epoch': args.epochs,
@@ -362,7 +368,7 @@ if __name__ == "__main__":
     checkpoint = torch.load("best_accel_transformer.pth")
 
     model.load_state_dict(checkpoint['model_state_dict'])
-    best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, name=f"best_model_{checkpoint['epoch']}", verbose=True, graph=True)
+    best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, name=f"best_model_ep{checkpoint['epoch']}", verbose=True, graph=True)
 
     run.finish()
 
