@@ -20,8 +20,8 @@ from utils import TConfig
 import yaml
 import wandb
 from datetime import datetime
-
-DEBUG_MODE = False
+from dataclasses import dataclass
+DEBUG_MODE = True
 run = None
 
 ANSI_CYAN = "\033[96m"
@@ -310,7 +310,43 @@ if __name__ == "__main__":
     if torch.cuda.is_available():
         torch.cuda.manual_seed(args.random_seed)
         torch.cuda.manual_seed_all(args.random_seed)
+
+    @dataclass
+    class FmtData:
+        X: np.ndarray
+        X_meta: np.ndarray
+        y: np.ndarray
     
+    # def format_features_and_labels(data_paths, args):
+    #     X_all = []
+    #     X_meta_all = []
+    #     y_all = []
+
+    #     for file_path in tqdm(data_paths):
+    #         for sensor_loc in args.sensor_loc:
+    #             try:
+    #                 X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+    #             except Exception as e:
+    #                 print(f"Error processing {file_path} with {sensor_loc}: {e}")
+    #                 continue
+    #             X_all.append(X)
+    #             X_meta_all.append(X_meta)
+    #             y_all.append(y)
+
+    #     # Split subjects into train/val/test before concatenating
+    #     n_subjects = len(X_all)
+    #     indices = np.arange(n_subjects)
+        
+    #     # First split: 60% train, 40% temp
+    #     train_indices, temp_indices = train_test_split(
+    #         indices, test_size=args.test_size, random_state=args.random_seed
+    #     )
+        
+    #     # Second split: 20% val, 20% test (from the 40% temp)
+    #     val_indices, test_indices = train_test_split(
+    #         temp_indices, test_size=0.5, random_state=args.random_seed
+    #     )
+
     X_all = []
     X_meta_all = []
     y_all = []
@@ -344,6 +380,7 @@ if __name__ == "__main__":
     X_train = np.concatenate([X_all[i] for i in train_indices], axis=0)
     X_meta_train = np.concatenate([X_meta_all[i] for i in train_indices], axis=0)
     y_train = np.concatenate([y_all[i] for i in train_indices], axis=0).ravel()
+    training_data = FmtData(X_train, X_meta_train, y_train)
     
     X_val = np.concatenate([X_all[i] for i in val_indices], axis=0)
     X_meta_val = np.concatenate([X_meta_all[i] for i in val_indices], axis=0)
@@ -367,13 +404,14 @@ if __name__ == "__main__":
     print("X_test shape:", X_test.shape)
     print("Classes:", np.unique(y_train))
 
-    train_dataset = HARWindowDataset(X_train, X_meta_train, y_train_int)
+    train_dataset = HARWindowDataset(training_data.X, training_data.X_meta, training_data.y)
     val_dataset = HARWindowDataset(X_val, X_meta_val, y_val_int)
     test_dataset = HARWindowDataset(X_test, X_meta_test, y_test_int)
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size)
+    exit()
 
 
     # === Model, loss, optimizer ===
@@ -505,69 +543,3 @@ if __name__ == "__main__":
         run.finish()
 
     exit()
-
-    # Load the best model
-    # if best_model_state is not None:
-    #     model.load_state_dict(best_model_state)
-    
-    model.eval()
-    eval_metrics = {}
-    with torch.no_grad():
-        total_loss = 0
-        predictions = []
-        actuals = []
-        correct = 0
-        total = 0
-        
-        for batch_idx, (x_seq, x_meta, y_true) in enumerate(test_loader):
-            x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
-            outputs = model(x_seq, x_meta)
-            loss = criterion(outputs, y_true)
-            total_loss += loss.item()
-            
-            # Convert outputs to class predictions
-            pred_classes = torch.argmax(outputs, dim=1)
-            true_classes = y_true
-            
-            # Calculate accuracy
-            correct += (pred_classes == true_classes).sum().item()
-            total += true_classes.size(0)
-            
-            # Store predictions and actual values
-            predictions.extend(pred_classes.cpu().numpy())
-            actuals.extend(true_classes.cpu().numpy())
-        
-        test_accuracy = 100. * correct / total
-        print(f"Test Accuracy: {test_accuracy:.2f}%")
-        
-        # Convert to numpy arrays
-        predictions = np.array(predictions)
-        actuals = np.array(actuals)
-        
-        # Calculate metrics
-        precision, recall, f1_score, _ = precision_recall_fscore_support(actuals, predictions)
-        cm = confusion_matrix(actuals, predictions)
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=decoder_dict.values(),
-                    yticklabels=decoder_dict.values())
-        plt.xlabel('Predicted')
-        plt.ylabel('True')
-        plt.title('Confusion Matrix (Raw Data)')
-        plt.savefig('transformer_confusion_matrix.png')
-        print("===Evaluation Metrics===")
-        print("class\t\tprec.\trecall\tf1-score")
-        for i, value in enumerate(decoder_dict.values()):
-            print(f"{value}\t{precision[i]:.4f}\t{recall[i]:.4f}\t{f1_score[i]:.4f}")
-
-        print()    
-        print(f"avg\t\t{np.mean(precision):.4f}\t{np.mean(recall):.4f}\t{np.mean(f1_score):.4f}")
-        
-        avg_test_loss = total_loss / len(test_loader)
-        print(f"Average Test Loss: {avg_test_loss}")
-        eval_metrics = {
-            'test_loss': avg_test_loss,
-            'precision': precision,
-            'recall': recall,
-            'f1_score': f1_score,
-        }
