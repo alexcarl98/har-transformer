@@ -58,6 +58,7 @@ class AccelTransformer(nn.Module):
             nn.Linear(fc_hidden_dim, num_classes)
         )
 
+
     def forward(self, x_seq, x_meta):
         """
         x_seq: (batch, seq_len=5, 3)

@@ -65,6 +65,9 @@ class TConfig:
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
+        if not os.path.exists(self.model_out_dir):
+            os.makedirs(self.model_out_dir)
+
         os.makedirs(self.figure_out_dir, exist_ok=True)
         os.makedirs(self.weights_out_dir, exist_ok=True)
 
