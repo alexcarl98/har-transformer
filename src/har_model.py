@@ -34,15 +34,36 @@ class PositionalEncoding(nn.Module):
         """
         x = x + self.pe[:, :x.size(1), :]
         return x
+    
+class NormalizeAccel(nn.Module):
+    def __init__(self, accel_range=(-15, 15)):
+        super().__init__()
+        self.min_val = accel_range[0]
+        self.max_val = accel_range[1]
+    
+    def forward(self, x):
+        return 2 * (x - self.min_val) / (self.max_val - self.min_val) - 1
+
 
 
 # === Transformer Model for HAR ===
 class AccelTransformer(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
                  in_seq_dim=3, in_meta_dim=3, nhead=4, 
-                 num_layers=2, dropout=0.1, num_classes=6):
+                 num_layers=2, dropout=0.1, num_classes=6,
+                 accel_range=(-15, 15)):
         super().__init__()
-        self.seq_proj = nn.Linear(in_seq_dim, d_model)             # Input: (batch, seq_len, 3)
+        # self.seq_proj = nn.Linear(in_seq_dim, d_model)             # Input: (batch, seq_len, 3)
+            # NormalizeAccel(accel_range),  # Keep input normalization
+            # nn.BatchNorm1d(in_seq_dim),
+        self.normalize = nn.BatchNorm1d(in_seq_dim)
+        
+        self.seq_proj = nn.Sequential(
+            nn.Linear(in_seq_dim, d_model // 2),
+            nn.ReLU(),
+            nn.Linear(d_model // 2, d_model)
+        )
+
         self.pos_encoder = PositionalEncoding(d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead,
@@ -64,7 +85,14 @@ class AccelTransformer(nn.Module):
         x_seq: (batch, seq_len=5, 3)
         x_meta: (batch, n_meta_features)
         """
-        x = self.seq_proj(x_seq)         # (batch, seq_len, d_model)
+        # batch_size, seq_len, _ = x_seq.shape
+        x= x_seq.transpose(1,2)
+        x = self.normalize(x)
+        x= x.transpose(1,2)
+
+        x = self.seq_proj(x)         # (batch, seq_len, d_model)
+
+        # x = self.seq_proj(x_seq)         # (batch, seq_len, d_model)
         x = self.pos_encoder(x)               # (batch, seq_len, d_model)
 
         x = x.permute(1, 0, 2)                # (seq_len, batch, d_model)

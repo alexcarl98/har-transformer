@@ -41,7 +41,7 @@ transformer:
   test_size: 0.2
   batch_size: 64
   patience: 20
-  learning_rate: 0.0007
+  learning_rate: 0.0015
   weight_decay: 0.001
   epochs: 17
   d_model: 66
