@@ -23,8 +23,6 @@ from datetime import datetime
 
 DEBUG_MODE = True
 run = None
-time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-model_name = f"transformer_{time_stamp}"
 
 ANSI_CYAN = "\033[96m"
 ANSI_GREEN = "\033[92m"
@@ -118,7 +116,7 @@ def val_batchX_labels(x_seq, x_meta, y_true, y_pred, decoder_dict, args, current
     plt.savefig(full_path, bbox_inches='tight')
     if not DEBUG_MODE:
         run.log({
-            f"batch_predictions_{current_number}": wandb.Image(
+            f"{name}_batch_predictions_{current_number}": wandb.Image(
                 plt.imread(full_path),
                 caption="Sample Predictions from Validation Batch"
             )
