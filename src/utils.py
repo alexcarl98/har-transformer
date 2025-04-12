@@ -35,6 +35,8 @@ class TConfig:
     stride: int = 10
     save_pkl: bool = False
     test_size: float = 0.4
+    warmup_ratio: float = 0.1
+    min_lr_ratio: float = 0.0
     batch_size: int = 16
     patience: int = 15
     learning_rate: float = 1e-3
@@ -54,7 +56,7 @@ class TConfig:
         self.weights_out_dir = os.path.join(self.model_out_dir, self.model_sub_dir, "weights")
         self.encoder_dict = {label: idx for idx, label in enumerate(self.classes)}
         self.decoder_dict = {idx: label for idx, label in enumerate(self.classes)}
-        
+
         if self.load_model_path:
             assert os.path.exists(self.load_model_path), f"Model file {self.load_model_path} does not exist."
         

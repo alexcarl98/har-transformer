@@ -399,6 +399,28 @@ def partition_across_sensors(data_paths, args):
 
     return training_data, val_data, test_data
 
+from torch.optim.lr_scheduler import LambdaLR
+import math
+
+def get_lr_scheduler(optimizer, warmup_steps, total_steps):
+    """
+    Creates a learning rate scheduler with linear warmup and cosine decay
+    
+    Args:
+        optimizer: The optimizer
+        warmup_steps: Number of warmup steps
+        total_steps: Total number of training steps
+    """
+    def lr_lambda(current_step):
+        if current_step < warmup_steps:
+            # Linear warmup
+            return float(current_step) / float(max(1, warmup_steps))
+        # Cosine decay
+        progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+    
+    return LambdaLR(optimizer, lr_lambda)
+
 def train_model(args, train_loader, val_data, model, optimizer, criterion, device):
     best_val_f1 = 0.0
     best_model_state = None
@@ -406,6 +428,11 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
     current_epoch = 0
     last_avg_loss = 0.0
     last_f1 = 0.0
+
+    total_steps = len(train_loader) * args.epochs
+    warmup_steps = int(total_steps * args.warmup_ratio)  # 10% of total steps for warmup
+    scheduler = get_lr_scheduler(optimizer, warmup_steps, total_steps)
+
     if args.load_model_path:
         checkpoint = torch.load(args.load_model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -435,7 +462,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
             loss = criterion(outputs, y_true)
             loss.backward()
             optimizer.step()
-
+            scheduler.step()
             # Consistent prediction handling
             pred_classes = torch.argmax(outputs, dim=1)
             predictions.extend(pred_classes.cpu().numpy())
@@ -447,9 +474,11 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
             
             # Update progress bar
             current_avg_loss = train_loss / ((batch_idx + 1) * x_seq.size(0))
+            current_lr = scheduler.get_last_lr()[0]
+
             if batch_idx % 10 == 0 or batch_idx == len(train_loader) - 1:
                 current_accuracy = 100. * accuracy_score(true, predictions)
-                pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%")
+                pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%, Lr: {current_lr:.6f}")
 
         avg_train_loss = train_loss / total
         train_accuracy = 100. * correct / total
@@ -495,7 +524,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
 
 
 if __name__ == "__main__":
-    ADD_NOISY_DATA = False
+    ADD_NOISY_DATA = True
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
 

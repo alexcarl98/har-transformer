@@ -71,17 +71,13 @@ class AccelTransformer(nn.Module):
             # nn.BatchNorm1d(in_seq_dim),
         self.normalize = nn.BatchNorm1d(in_seq_dim)
         
-        self.seq_proj = nn.Linear(in_seq_dim, d_model)
-        # self.seq_proj = nn.Sequential(
-        #     nn.Linear(in_seq_dim, d_model // 2),
-        #     nn.ReLU(),
-        #     nn.Linear(d_model // 2, d_model)
-        # )
-        # self.seq_proj = nn.Sequential(
-        #     nn.Linear(in_seq_dim, d_model // 2),
-        #     nn.ReLU(),
-        #     nn.Linear(d_model // 2, d_model)
-        # )
+        # self.seq_proj = nn.Linear(in_seq_dim, d_model)
+        self.seq_proj = nn.Sequential(
+            nn.Linear(in_seq_dim, d_model//2),
+            nn.LeakyReLU(),
+            nn.Linear(d_model//2, d_model)
+        )
+
 
         self.pos_encoder = PositionalEncoding(d_model)
 
@@ -93,7 +89,7 @@ class AccelTransformer(nn.Module):
 
         self.classifier = nn.Sequential(
             nn.Linear(d_model * 2, fc_hidden_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Dropout(dropout),
             nn.Linear(fc_hidden_dim, num_classes)
         )
@@ -107,7 +103,7 @@ class AccelTransformer(nn.Module):
         # batch_size, seq_len, _ = x_seq.shape
         x= x_seq.transpose(1,2)
         x = self.normalize(x)
-        x= x.transpose(1,2)
+        x = x.transpose(1,2)
 
         x = self.seq_proj(x)         # (batch, seq_len, d_model)
 
