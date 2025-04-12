@@ -15,10 +15,27 @@ class HARWindowDataset(torch.utils.data.Dataset):
         return self.X[idx], self.X_meta[idx], self.y[idx]
 
     def combine_with(self, other):
+        # print(f"Combining datasets of sizes: {len(self)} and {len(other)}")
         X = torch.cat([self.X, other.X], dim=0)
         X_meta = torch.cat([self.X_meta, other.X_meta], dim=0)
         y = torch.cat([self.y, other.y], dim=0)
-        return HARWindowDataset(X, X_meta, y)
+        result = HARWindowDataset(X, X_meta, y)
+        # print(f"Result size: {len(result)}")
+        return result
+    
+    @classmethod
+    def decouple_combine(cls, har_list: list['HARWindowDataset']):
+        # print(f"\nDEBUG decouple_combine:")
+        # print(f"Number of sensors to combine: {len(har_list)}")
+        first = har_list[0]
+        # print(f"First sensor dataset size: {len(first)}")
+        
+        for i in range(1, len(har_list)):
+            # print(f"Combining with sensor {i}, size: {len(har_list[i])}")
+            first = first.combine_with(har_list[i])
+            # print(f"Combined size: {len(first)}")
+        return first
+
 
 
 class PositionalEncoding(nn.Module):

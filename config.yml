@@ -38,7 +38,7 @@ random_forest:
 
 transformer:
   <<: *base_model
-  test_size: 0.2
+  test_size: 0.3
   batch_size: 64
   patience: 20
   learning_rate: 0.0015
