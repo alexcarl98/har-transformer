@@ -57,16 +57,6 @@ class PositionalEncoding(nn.Module):
         """
         x = x + self.pe[:, :x.size(1), :]
         return x
-    
-class NormalizeAccel(nn.Module):
-    def __init__(self, accel_range=(-15, 15)):
-        super().__init__()
-        self.min_val = accel_range[0]
-        self.max_val = accel_range[1]
-    
-    def forward(self, x):
-        return 2 * (x - self.min_val) / (self.max_val - self.min_val) - 1
-
 
 
 # === Transformer Model for HAR ===
@@ -81,11 +71,17 @@ class AccelTransformer(nn.Module):
             # nn.BatchNorm1d(in_seq_dim),
         self.normalize = nn.BatchNorm1d(in_seq_dim)
         
-        self.seq_proj = nn.Sequential(
-            nn.Linear(in_seq_dim, d_model // 2),
-            nn.ReLU(),
-            nn.Linear(d_model // 2, d_model)
-        )
+        self.seq_proj = nn.Linear(in_seq_dim, d_model)
+        # self.seq_proj = nn.Sequential(
+        #     nn.Linear(in_seq_dim, d_model // 2),
+        #     nn.ReLU(),
+        #     nn.Linear(d_model // 2, d_model)
+        # )
+        # self.seq_proj = nn.Sequential(
+        #     nn.Linear(in_seq_dim, d_model // 2),
+        #     nn.ReLU(),
+        #     nn.Linear(d_model // 2, d_model)
+        # )
 
         self.pos_encoder = PositionalEncoding(d_model)
 
