@@ -13,7 +13,7 @@ model: &base_model
     - "x"
     - "y"
     - "z"
-    # - "vm"
+    - "vm"
 
   extracted_features:
     # - "mean"
@@ -39,16 +39,16 @@ random_forest:
 
 transformer:
   <<: *base_model
-  test_size: 0.2
+  test_size: 0.3
   batch_size: 64
-  patience: 80
+  patience: 18
   learning_rate: 0.0015
   weight_decay: 0.001
-  epochs: 2
+  epochs: 35
   d_model: 66
-  fc_hidden_dim: 128
+  fc_hidden_dim: 256
   nhead: 6
-  num_layers: 3
+  num_layers: 2
   dropout: 0.1
   load_model_path: ''
 

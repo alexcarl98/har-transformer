@@ -495,6 +495,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
 
 
 if __name__ == "__main__":
+    ADD_NOISY_DATA = False
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
 
@@ -521,11 +522,13 @@ if __name__ == "__main__":
     decoder_dict = args.decoder_dict
 
     train_data, val_data, test_data = partition_across_subjects(raw_data_paths, args)
-    noise_train_data, noise_val_data, noise_test_data = partition_across_sensors(incomplete_data_paths, args)
     
-    train_data = train_data.combine_with(noise_train_data)
-    val_data = val_data.combine_with(noise_val_data)
-    test_data = test_data.combine_with(noise_test_data)
+    if ADD_NOISY_DATA:
+        noise_train_data, noise_val_data, noise_test_data = partition_across_sensors(incomplete_data_paths, args)
+        
+        train_data = train_data.combine_with(noise_train_data)
+        val_data = val_data.combine_with(noise_val_data)
+        test_data = test_data.combine_with(noise_test_data)
 
     print("X_train shape:", train_data.X.shape)
     print("X_val shape:", val_data.X.shape)
