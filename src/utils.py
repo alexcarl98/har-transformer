@@ -52,6 +52,8 @@ class TConfig:
         self.model_sub_dir = f"run_{self.time_stamp}"
         self.figure_out_dir = os.path.join(self.model_out_dir, self.model_sub_dir)
         self.weights_out_dir = os.path.join(self.model_out_dir, self.model_sub_dir, "weights")
+        self.encoder_dict = {label: idx for idx, label in enumerate(self.classes)}
+        self.decoder_dict = {idx: label for idx, label in enumerate(self.classes)}
         
         if self.load_model_path:
             assert os.path.exists(self.load_model_path), f"Model file {self.load_model_path} does not exist."

@@ -14,6 +14,12 @@ class HARWindowDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.X_meta[idx], self.y[idx]
 
+    def combine_with(self, other):
+        X = torch.cat([self.X, other.X], dim=0)
+        X_meta = torch.cat([self.X_meta, other.X_meta], dim=0)
+        y = torch.cat([self.y, other.y], dim=0)
+        return HARWindowDataset(X, X_meta, y)
+
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=500):

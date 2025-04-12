@@ -6,11 +6,25 @@ from constants import WINDOW_SIZE, STRIDE, LABELS_COL, TIME_COL, RANDOM_SEED, TE
 from sklearn.model_selection import train_test_split
 π = np.pi
 
-def encode_labels(y):
-    label_encoder = LabelEncoder()
-    y_int = label_encoder.fit_transform(y)  # Converts to array of integers like [0, 1, 0, 2, ...]
-    encoder_dict = {label: idx for idx, label in enumerate(label_encoder.classes_)}
-    decoder_dict = {idx: label for label, idx in encoder_dict.items()}
+def encode_labels(y, class_list):
+    """
+    Encode labels using predefined class list from config
+    
+    Args:
+        y: array-like of string labels
+        class_list: list of class names from config
+    Returns:
+        y_int: array of encoded integers
+        encoder_dict: mapping from label to index
+        decoder_dict: mapping from index to label
+    """
+    # Create dictionaries from class list
+    encoder_dict = {label: idx for idx, label in enumerate(class_list)}
+    decoder_dict = {idx: label for idx, label in enumerate(class_list)}
+    
+    # Encode labels using the dictionary
+    y_int = np.array([encoder_dict[label] for label in y])
+    
     return y_int, encoder_dict, decoder_dict
 
 def extract_window_signal_features(window):
