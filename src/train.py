@@ -293,6 +293,133 @@ def save_model(epoch, model_state, optimizer_state,
         'val_f1': val_f1,
     }, f"{args.weights_out_dir}/{name}.pth")
 
+def partition_across_subjects(data_paths, args):
+    X_all = []
+    X_meta_all = []
+    y_all = []
+    all_subjects = [] 
+
+    for file_path in tqdm(data_paths):
+        subject_data = [] 
+        
+        for sensor_loc in args.sensor_loc:
+            try:
+                X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+                X_all.append(X)
+                X_meta_all.append(X_meta)
+                y_all.append(y)
+                temp = y.tolist()
+                y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
+                subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
+            except Exception as e:
+                print(f"Error processing {file_path} with {sensor_loc}: {e}")
+                continue
+        
+        all_subjects.append(subject_data)
+
+    # print(f"{len(all_subjects)=}")
+    # print(f"{len(all_subjects[0])=}")
+    n_subjects = len(all_subjects)
+    indices = range(n_subjects)
+    # indices = np.arange(n_subjects)
+    sub_train_indices, sub_temp_indices = train_test_split(
+        indices, test_size=args.test_size, random_state=args.random_seed
+    )
+    sub_val_indices, sub_test_indices = train_test_split(
+        sub_temp_indices, test_size=0.5, random_state=args.random_seed
+    )
+
+    def alt_format_data(all_subjects, indices, args):
+        # print("\nDEBUG alt_format_data:")
+        # print(f"Number of total subjects: {len(all_subjects)}")
+        # print(f"Number of sensors per subject: {len(all_subjects[0])}")
+        # print(f"Working with indices: {indices}")
+        
+        # Start with first subject's data
+        current_har_subject_data = HARWindowDataset.decouple_combine(all_subjects[indices[0]])
+        # print(f"Initial dataset size: {len(current_har_subject_data)}")
+        
+        # Combine with remaining subjects
+        for i in indices[1:]:
+            next_subject_data = HARWindowDataset.decouple_combine(all_subjects[i])
+            # print(f"Combining with subject {i}, size: {len(next_subject_data)}")
+            current_har_subject_data = current_har_subject_data.combine_with(next_subject_data)
+            # print(f"Combined size: {len(current_har_subject_data)}")
+        
+        return current_har_subject_data
+    
+
+    # Split subjects into train/val/test before concatenating
+    n_subjects = len(all_subjects)
+    indices = np.arange(n_subjects)
+    
+    # First split: 60% train, 40% temp
+    train_indices, temp_indices = train_test_split(
+        indices, test_size=args.test_size, random_state=args.random_seed
+    )
+    
+    # Second split: 20% val, 20% test (from the 40% temp)
+    val_indices, test_indices = train_test_split(
+        temp_indices, test_size=0.5, random_state=args.random_seed
+    )
+
+    train_data = alt_format_data(all_subjects, train_indices, args)
+    val_data = alt_format_data(all_subjects, val_indices, args)
+    test_data = alt_format_data(all_subjects, test_indices, args)
+    print(f"{len(train_data)=}")
+    print(f"{len(val_data)=}")
+    print(f"{len(test_data)=}")
+    
+    # print("X_train shape:", train_data.X.shape)
+    # print("X_val shape:", val_data.X.shape)
+    # print("X_test shape:", test_data.X.shape)
+    # print("Classes:", np.unique(train_data.y))
+    return train_data, val_data, test_data
+
+def partition_across_sensors(data_paths, args):
+    X_all = []
+    X_meta_all = []
+    y_all = []
+
+    for file_path in tqdm(data_paths):
+        subject_data = [] 
+        
+        for sensor_loc in args.sensor_loc:
+            try:
+                X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+                X_all.append(X)
+                X_meta_all.append(X_meta)
+                y_all.append(y)
+            except Exception as e:
+                print(f"Error processing {file_path} with {sensor_loc}: {e}")
+                continue
+
+    # Split subjects into train/val/test before concatenating
+    n_subjects = len(X_all)
+    indices = np.arange(n_subjects)
+    
+    # First split: 60% train, 40% temp
+    train_indices, temp_indices = train_test_split(
+        indices, test_size=args.test_size, random_state=args.random_seed
+    )
+    
+    # Second split: 20% val, 20% test (from the 40% temp)
+    val_indices, test_indices = train_test_split(
+        temp_indices, test_size=0.5, random_state=args.random_seed)
+    
+    def format_data(X_all, X_meta_all, y_all, indices, args):
+        X = np.concatenate([X_all[i] for i in indices], axis=0)
+        X_meta = np.concatenate([X_meta_all[i] for i in indices], axis=0)
+        y = np.concatenate([y_all[i] for i in indices], axis=0).ravel()
+        y_int = np.array([args.encoder_dict[label] for label in y])
+        return HARWindowDataset(X, X_meta, y_int)
+    
+    training_data = format_data(X_all, X_meta_all, y_all, train_indices, args)
+    val_data = format_data(X_all, X_meta_all, y_all, val_indices, args)
+    test_data = format_data(X_all, X_meta_all, y_all, test_indices, args)
+
+    return training_data, val_data, test_data
+
 if __name__ == "__main__":
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
@@ -311,6 +438,7 @@ if __name__ == "__main__":
         torch.cuda.manual_seed(args.random_seed)
         torch.cuda.manual_seed_all(args.random_seed)
 
+    decoder_dict = args.decoder_dict
     # def format_features_and_labels(data_paths, args):
     #     X_all = []
     #     X_meta_all = []
@@ -341,119 +469,115 @@ if __name__ == "__main__":
     #     val_indices, test_indices = train_test_split(
     #         temp_indices, test_size=0.5, random_state=args.random_seed
     #     )
-
-    X_all = []
-    X_meta_all = []
-    y_all = []
-    all_subjects = [] 
-
-    for file_path in tqdm(raw_data_urls):
-        subject_data = [] 
-        
-        for sensor_loc in args.sensor_loc:
-            try:
-                X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
-                X_all.append(X)
-                X_meta_all.append(X_meta)
-                y_all.append(y)
-                temp = y.tolist()
-                y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
-                subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
-            except Exception as e:
-                print(f"Error processing {file_path} with {sensor_loc}: {e}")
-                continue
-        
-        all_subjects.append(subject_data)
-
-    # print(f"{len(all_subjects)=}")
-    # print(f"{len(all_subjects[0])=}")
-    n_subjects = len(all_subjects)
-    indices = range(n_subjects)
-    # indices = np.arange(n_subjects)
-    sub_train_indices, sub_temp_indices = train_test_split(
-        indices, test_size=args.test_size, random_state=args.random_seed
-    )
-    # print(f"{sub_train_indices=}")
-    # print(f"{sub_temp_indices=}")
+    train_data, val_data, test_data = partition_across_subjects(raw_data_urls, args)
     # exit()
-    sub_val_indices, sub_test_indices = train_test_split(
-        sub_temp_indices, test_size=0.5, random_state=args.random_seed
-    )
 
-    def alt_format_data(all_subjects, indices, args):
-        # print("\nDEBUG alt_format_data:")
-        # print(f"Number of total subjects: {len(all_subjects)}")
-        # print(f"Number of sensors per subject: {len(all_subjects[0])}")
-        # print(f"Working with indices: {indices}")
+    # X_all = []
+    # X_meta_all = []
+    # y_all = []
+    # # all_subjects = [] 
+
+    # for file_path in tqdm(raw_data_urls):
+    #     subject_data = [] 
         
-        # Start with first subject's data
-        current_har_subject_data = HARWindowDataset.decouple_combine(all_subjects[indices[0]])
-        # print(f"Initial dataset size: {len(current_har_subject_data)}")
+    #     for sensor_loc in args.sensor_loc:
+    #         try:
+    #             X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+    #             X_all.append(X)
+    #             X_meta_all.append(X_meta)
+    #             y_all.append(y)
+    #             temp = y.tolist()
+    #             y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
+    #             subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
+    #         except Exception as e:
+    #             print(f"Error processing {file_path} with {sensor_loc}: {e}")
+    #             continue
         
-        # Combine with remaining subjects
-        for i in indices[1:]:
-            next_subject_data = HARWindowDataset.decouple_combine(all_subjects[i])
-            # print(f"Combining with subject {i}, size: {len(next_subject_data)}")
-            current_har_subject_data = current_har_subject_data.combine_with(next_subject_data)
-            # print(f"Combined size: {len(current_har_subject_data)}")
+    #     all_subjects.append(subject_data)
+
+    # # print(f"{len(all_subjects)=}")
+    # # print(f"{len(all_subjects[0])=}")
+    # n_subjects = len(all_subjects)
+    # indices = range(n_subjects)
+    # # indices = np.arange(n_subjects)
+    # sub_train_indices, sub_temp_indices = train_test_split(
+    #     indices, test_size=args.test_size, random_state=args.random_seed
+    # )
+    # sub_val_indices, sub_test_indices = train_test_split(
+    #     sub_temp_indices, test_size=0.5, random_state=args.random_seed
+    # )
+
+    # def alt_format_data(all_subjects, indices, args):
+    #     # print("\nDEBUG alt_format_data:")
+    #     # print(f"Number of total subjects: {len(all_subjects)}")
+    #     # print(f"Number of sensors per subject: {len(all_subjects[0])}")
+    #     # print(f"Working with indices: {indices}")
         
-        return current_har_subject_data
+    #     # Start with first subject's data
+    #     current_har_subject_data = HARWindowDataset.decouple_combine(all_subjects[indices[0]])
+    #     # print(f"Initial dataset size: {len(current_har_subject_data)}")
+        
+    #     # Combine with remaining subjects
+    #     for i in indices[1:]:
+    #         next_subject_data = HARWindowDataset.decouple_combine(all_subjects[i])
+    #         # print(f"Combining with subject {i}, size: {len(next_subject_data)}")
+    #         current_har_subject_data = current_har_subject_data.combine_with(next_subject_data)
+    #         # print(f"Combined size: {len(current_har_subject_data)}")
+        
+    #     return current_har_subject_data
     
 
 
 
-    # Split subjects into train/val/test before concatenating
-    n_subjects = len(all_subjects)
-    indices = np.arange(n_subjects)
+    # # Split subjects into train/val/test before concatenating
+    # n_subjects = len(all_subjects)
+    # indices = np.arange(n_subjects)
     
-    # First split: 60% train, 40% temp
-    train_indices, temp_indices = train_test_split(
-        indices, test_size=args.test_size, random_state=args.random_seed
-    )
+    # # First split: 60% train, 40% temp
+    # train_indices, temp_indices = train_test_split(
+    #     indices, test_size=args.test_size, random_state=args.random_seed
+    # )
     
-    # Second split: 20% val, 20% test (from the 40% temp)
-    val_indices, test_indices = train_test_split(
-        temp_indices, test_size=0.5, random_state=args.random_seed
-    )
+    # # Second split: 20% val, 20% test (from the 40% temp)
+    # val_indices, test_indices = train_test_split(
+    #     temp_indices, test_size=0.5, random_state=args.random_seed
+    # )
 
-    train_data = alt_format_data(all_subjects, train_indices, args)
-    val_data = alt_format_data(all_subjects, val_indices, args)
-    test_data = alt_format_data(all_subjects, test_indices, args)
-    print(f"{len(train_data)=}")
-    print(f"{len(val_data)=}")
-    print(f"{len(test_data)=}")
-    print("X_train shape:", train_dataset.X.shape)
-    print("X_val shape:", val_dataset.X.shape)
-    print("X_test shape:", test_dataset.X.shape)
-    print("Classes:", np.unique(train_dataset.y))
-    exit()
-
-    def format_data(X_all, X_meta_all, y_all, indices, args):
-        X = np.concatenate([X_all[i] for i in indices], axis=0)
-        X_meta = np.concatenate([X_meta_all[i] for i in indices], axis=0)
-        y = np.concatenate([y_all[i] for i in indices], axis=0).ravel()
-        y_int = np.array([args.encoder_dict[label] for label in y])
-        return HARWindowDataset(X, X_meta, y_int)
+    # train_data = alt_format_data(all_subjects, train_indices, args)
+    # val_data = alt_format_data(all_subjects, val_indices, args)
+    # test_data = alt_format_data(all_subjects, test_indices, args)
+    # print(f"{len(train_data)=}")
+    # print(f"{len(val_data)=}")
+    # print(f"{len(test_data)=}")
     
-    training_data = format_data(X_all, X_meta_all, y_all, train_indices, args)
-    val_data = format_data(X_all, X_meta_all, y_all, val_indices, args)
-    test_data = format_data(X_all, X_meta_all, y_all, test_indices, args)
+    # exit()
+
+    # def format_data(X_all, X_meta_all, y_all, indices, args):
+    #     X = np.concatenate([X_all[i] for i in indices], axis=0)
+    #     X_meta = np.concatenate([X_meta_all[i] for i in indices], axis=0)
+    #     y = np.concatenate([y_all[i] for i in indices], axis=0).ravel()
+    #     y_int = np.array([args.encoder_dict[label] for label in y])
+    #     return HARWindowDataset(X, X_meta, y_int)
+    
+    # training_data = format_data(X_all, X_meta_all, y_all, train_indices, args)
+    # val_data = format_data(X_all, X_meta_all, y_all, val_indices, args)
+    # test_data = format_data(X_all, X_meta_all, y_all, test_indices, args)
 
     decoder_dict = args.decoder_dict
 
 
-    train_dataset = format_data(X_all, X_meta_all, y_all, train_indices, args)
-    val_dataset = format_data(X_all, X_meta_all, y_all, val_indices, args)
-    test_dataset = format_data(X_all, X_meta_all, y_all, test_indices, args)
+    # train_dataset = format_data(X_all, X_meta_all, y_all, train_indices, args)
+    # val_dataset = format_data(X_all, X_meta_all, y_all, val_indices, args)
+    # test_dataset = format_data(X_all, X_meta_all, y_all, test_indices, args)
     
-    print("X_train shape:", train_dataset.X.shape)
-    print("X_val shape:", val_dataset.X.shape)
-    print("X_test shape:", test_dataset.X.shape)
-    print("Classes:", np.unique(train_dataset.y))
+    print("X_train shape:", train_data.X.shape)
+    print("X_val shape:", val_data.X.shape)
+    print("X_test shape:", test_data.X.shape)
+    print("Classes:", np.unique(train_data.y))
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size)
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size)
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size)
 
 
     # === Model, loss, optimizer ===
