@@ -356,7 +356,7 @@ if __name__ == "__main__":
                 X_all.append(X)
                 X_meta_all.append(X_meta)
                 y_all.append(y)
-                temp= y.tolist()
+                temp = y.tolist()
                 y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
                 subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
             except Exception as e:
@@ -422,6 +422,10 @@ if __name__ == "__main__":
     print(f"{len(train_data)=}")
     print(f"{len(val_data)=}")
     print(f"{len(test_data)=}")
+    print("X_train shape:", train_dataset.X.shape)
+    print("X_val shape:", val_dataset.X.shape)
+    print("X_test shape:", test_dataset.X.shape)
+    print("Classes:", np.unique(train_dataset.y))
     exit()
 
     def format_data(X_all, X_meta_all, y_all, indices, args):
