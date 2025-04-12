@@ -11,7 +11,7 @@ from tqdm import tqdm
 from constants import *
 from sklearn.metrics import classification_report, accuracy_score
 from preprocessing import load_and_process_data, split_data, encode_labels
-from har_model import AccelTransformer, HARWindowDataset
+from har_model import AccelTransformer, HARWindowDataset, CNNTransformerHAR
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc
@@ -570,16 +570,28 @@ if __name__ == "__main__":
 
 
     # === Model, loss, optimizer ===
-    model = AccelTransformer(
-        d_model=args.d_model,
-        fc_hidden_dim=args.fc_hidden_dim,
+    # model = AccelTransformer(
+    #     d_model=args.d_model,
+    #     fc_hidden_dim=args.fc_hidden_dim,
+    #     num_classes=args.num_classes,
+    #     in_seq_dim=args.in_seq_dim,
+    #     in_meta_dim=args.in_meta_dim,
+    #     nhead=args.nhead,
+    #     num_layers=args.num_layers,
+    #     dropout=args.dropout
+    # ).to(DEVICE)
+    model = CNNTransformerHAR(
         num_classes=args.num_classes,
+        seq_len=args.window_size,
         in_seq_dim=args.in_seq_dim,
         in_meta_dim=args.in_meta_dim,
         nhead=args.nhead,
         num_layers=args.num_layers,
         dropout=args.dropout
     ).to(DEVICE)
+        # d_model=args.d_model,
+        # cnn_out_channels=args.cnn_out_channels,
+        # fc_hidden_dim=args.fc_hidden_dim,
     optimizer = Adam(model.parameters(),
                       lr=args.learning_rate, 
                       weight_decay=args.weight_decay)
