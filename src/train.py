@@ -367,6 +367,13 @@ if __name__ == "__main__":
 
     print(f"{len(all_subjects)=}")
     print(f"{len(all_subjects[0])=}")
+    n_subjects = len(all_subjects)
+    indices = np.arange(n_subjects)
+    sub_train_indices, sub_temp_indices = train_test_split(
+        indices, test_size=args.test_size, random_state=args.random_seed
+    )
+    print(f"{sub_train_indices=}")
+    print(f"{sub_temp_indices=}")
     exit()
     
     # Split subjects into train/val/test before concatenating
