@@ -66,63 +66,70 @@ class AccelTransformer(nn.Module):
                  num_layers=2, dropout=0.1, num_classes=6,
                  accel_range=(-15, 15)):
         super().__init__()
-        # self.seq_proj = nn.Linear(in_seq_dim, d_model)             # Input: (batch, seq_len, 3)
-            # NormalizeAccel(accel_range),  # Keep input normalization
-            # nn.BatchNorm1d(in_seq_dim),
-        self.normalize = nn.BatchNorm1d(in_seq_dim)
         
+        self.normalize = nn.LayerNorm(in_seq_dim)
         self.seq_proj = nn.Linear(in_seq_dim, d_model)
-        # self.seq_proj = nn.Sequential(
-        #     nn.Linear(in_seq_dim, d_model//2),
-        #     nn.ReLU(),
-        #     nn.Linear(d_model//2, d_model)
-        # )
 
-
-        self.pos_encoder = PositionalEncoding(d_model)
+        # Make sure d_model is divisible by 2 for the positional encoding
+        assert d_model % 2 == 0, "d_model must be even"
+        self.pos_encoder = PositionalEncoding(d_model)  # Changed from d_model//2 to d_model
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead,
                                                    dim_feedforward=128, dropout=dropout,
                                                    norm_first=True)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
-        self.meta_proj = nn.Linear(in_meta_dim, d_model)
+        # Simplified meta projection to match dimensions
+        meta_hidden_dim = 16  # or even smaller, like 8
+        self.meta_proj = nn.Sequential(
+            nn.Linear(in_meta_dim, meta_hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
+        combined_dim = d_model + meta_hidden_dim
 
         self.classifier = nn.Sequential(
-            nn.Linear(d_model * 2, fc_hidden_dim),
+            nn.Linear(combined_dim, fc_hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(fc_hidden_dim, num_classes)
         )
-
 
     def forward(self, x_seq, x_meta):
         """
         x_seq: (batch, seq_len=5, 3)
         x_meta: (batch, n_meta_features)
         """
-        # batch_size, seq_len, _ = x_seq.shape
-        x= x_seq.transpose(1,2)
-        x = self.normalize(x)
-        x = x.transpose(1,2)
-
+        x = self.normalize(x_seq)
         x = self.seq_proj(x)         # (batch, seq_len, d_model)
+        x = self.pos_encoder(x)      # (batch, seq_len, d_model)
 
-        # x = self.seq_proj(x_seq)         # (batch, seq_len, d_model)
-        x = self.pos_encoder(x)               # (batch, seq_len, d_model)
+        x = x.permute(1, 0, 2)       # (seq_len, batch, d_model)
+        x = self.transformer_encoder(x)  # (seq_len, batch, d_model)
+        x = x.mean(dim=0)            # (batch, d_model)
 
-        x = x.permute(1, 0, 2)                # (seq_len, batch, d_model)
-        x = self.transformer_encoder(x)       # (seq_len, batch, d_model)
-        x = x.mean(dim=0)                     # (batch, d_model)
+        meta = self.meta_proj(x_meta)  # (batch, d_model)
 
-        meta = self.meta_proj(x_meta)        # (batch, d_model)
+        combined = torch.cat([x, meta], dim=1)  # (batch, d_model * 2)
 
-        combined = torch.cat([x, meta], dim=1)   # (batch, d_model * 2)
-
-        return self.classifier(combined)      # (batch, num_classes)
+        return self.classifier(combined)  # (batch, num_classes)
 
 
-
+class XYZLSTM(nn.Module):
+    def __init__(self, in_seq_dim=3, hidden_dim=128, num_classes=6):
+        super().__init__()
+        self.normalize = nn.LayerNorm(in_seq_dim)
+        
+        self.lstm = nn.LSTM(input_size=in_seq_dim, hidden_size=hidden_dim, 
+                            batch_first=True)
+        self.fc = nn.Linear(hidden_dim, num_classes)
+        
+    def forward(self, x, x_meta=None):
+        x = self.normalize(x)
+        _, (h_n, _) = self.lstm(x)
+        return self.fc(h_n[-1])
+        
+        
 
 # import torch
 # import torch.nn as nn

@@ -11,7 +11,7 @@ from tqdm import tqdm
 from constants import *
 from sklearn.metrics import classification_report, accuracy_score
 from preprocessing import load_and_process_data, split_data, encode_labels
-from har_model import AccelTransformer, HARWindowDataset, CNNTransformerHAR
+from har_model import AccelTransformer, HARWindowDataset, CNNTransformerHAR, XYZLSTM
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc
@@ -21,7 +21,7 @@ import yaml
 import wandb
 from datetime import datetime
 
-DEBUG_MODE = False
+DEBUG_MODE = True
 run = None
 
 ANSI_CYAN = "\033[96m"
@@ -431,7 +431,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
 
     total_steps = len(train_loader) * args.epochs
     warmup_steps = int(total_steps * args.warmup_ratio)  # 10% of total steps for warmup
-    scheduler = get_lr_scheduler(optimizer, warmup_steps, total_steps)
+    # scheduler = get_lr_scheduler(optimizer, warmup_steps, total_steps)
 
     if args.load_model_path:
         checkpoint = torch.load(args.load_model_path)
@@ -450,19 +450,25 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
         true = []
         correct = 0
         total = 0
-        print(f'Epoch {current_epoch}/{args.epochs}:')
+        # print(f'Epoch {current_epoch}/{args.epochs}:')
         print(f"===(Training)===")
         pbar = tqdm(train_loader)
+        # print("Model weights:", model.classifier[0].weight.data.shape)
+        # exit()
         for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
             x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
 
             # Training specific steps
             optimizer.zero_grad()
             outputs = model(x_seq, x_meta)
+            # if batch_idx % 200 == 0:
+            #     print("Model Weights Before:", model.classifier[0].weight.data)
             loss = criterion(outputs, y_true)
             loss.backward()
             optimizer.step()
-            scheduler.step()
+            # scheduler.step()
+            # if batch_idx % 200 == 0:
+            #     print("Model Weights After:", model.classifier[0].weight.data)
             # Consistent prediction handling
             pred_classes = torch.argmax(outputs, dim=1)
             predictions.extend(pred_classes.cpu().numpy())
@@ -474,14 +480,16 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
             
             # Update progress bar
             current_avg_loss = train_loss / ((batch_idx + 1) * x_seq.size(0))
-            current_lr = scheduler.get_last_lr()[0]
+            # current_lr = scheduler.get_last_lr()[0]
 
             if batch_idx % 10 == 0 or batch_idx == len(train_loader) - 1:
                 current_accuracy = 100. * accuracy_score(true, predictions)
-                pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%, Lr: {current_lr:.6f}")
+                pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%")
+                # pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%, Lr: {current_lr:.6f}")
 
         avg_train_loss = train_loss / total
         train_accuracy = 100. * correct / total
+        # exit()
 
         # Validation phase
         print(f"===(Validation)===")
@@ -524,7 +532,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
 
 
 if __name__ == "__main__":
-    ADD_NOISY_DATA = True
+    ADD_NOISY_DATA = False
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
 
@@ -538,6 +546,8 @@ if __name__ == "__main__":
         print(f"{ANSI_CYAN}DEBUG MODE: Will not log to wandb{ANSI_RESET}")
 
     args = TConfig(**config['transformer'])
+    # if DEBUG_MODE:
+    #     dataset_numbers = debug_set
     raw_data_paths = [f"{args.data_dir}{num}.csv" for num in dataset_numbers]
     incomplete_data_paths = [f"{args.data_dir}{num}.csv" for num in incomplete]
 
@@ -570,6 +580,21 @@ if __name__ == "__main__":
 
 
     # === Model, loss, optimizer ===
+    model = AccelTransformer(
+        d_model=args.d_model,
+        fc_hidden_dim=args.fc_hidden_dim,
+        num_classes=args.num_classes,
+        in_seq_dim=args.in_seq_dim,
+        in_meta_dim=args.in_meta_dim,
+        nhead=args.nhead,
+        num_layers=args.num_layers,
+        dropout=args.dropout
+    ).to(DEVICE)
+    # model = XYZLSTM(
+    #     in_seq_dim=args.in_seq_dim,
+    #     hidden_dim=args.fc_hidden_dim,
+    #     num_classes=args.num_classes
+    # ).to(DEVICE)
     # model = AccelTransformer(
     #     d_model=args.d_model,
     #     fc_hidden_dim=args.fc_hidden_dim,
@@ -580,15 +605,15 @@ if __name__ == "__main__":
     #     num_layers=args.num_layers,
     #     dropout=args.dropout
     # ).to(DEVICE)
-    model = CNNTransformerHAR(
-        num_classes=args.num_classes,
-        seq_len=args.window_size,
-        in_seq_dim=args.in_seq_dim,
-        in_meta_dim=args.in_meta_dim,
-        nhead=args.nhead,
-        num_layers=args.num_layers,
-        dropout=args.dropout
-    ).to(DEVICE)
+    # model = CNNTransformerHAR(
+    #     num_classes=args.num_classes,
+    #     seq_len=args.window_size,
+    #     in_seq_dim=args.in_seq_dim,
+    #     in_meta_dim=args.in_meta_dim,
+    #     nhead=args.nhead,
+    #     num_layers=args.num_layers,
+    #     dropout=args.dropout
+    # ).to(DEVICE)
         # d_model=args.d_model,
         # cnn_out_channels=args.cnn_out_channels,
         # fc_hidden_dim=args.fc_hidden_dim,

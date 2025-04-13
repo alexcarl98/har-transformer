@@ -11,7 +11,7 @@ dataset_numbers = ['001', '002', '004', '008','010','011','012',
                    '021','022','024','025', '031', '032', '033', 
                    '034','035','036', '039', '040', '041'
                    ]
-
+debug_set = ['001', '002', '004', '008','010','011','012']
 # dataset_numbers = no_ankle + dont_have_jogging + dataset_numbers
 
 all_subjects = dataset_numbers + no_ankle
