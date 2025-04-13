@@ -65,16 +65,27 @@ class AccelTransformer(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
                  in_seq_dim=3, in_meta_dim=3, nhead=4, 
                  num_layers=2, dropout=0.1, num_classes=6,
-                 accel_range=(-15, 15), use_metadata=False):
+                 accel_range=(-15, 15), 
+                 use_metadata=False,
+                 use_vec_mag=True
+                 ):
         super().__init__()
         
         self.use_metadata = use_metadata
+        self.use_vec_mag = use_vec_mag
+        if use_vec_mag:
+            in_seq_dim += 1
+        
+        if use_metadata:
+            self.seq_proj = nn.Sequential(
+                nn.Linear(in_seq_dim, d_model//2),
+                nn.ReLU(),
+                nn.Linear(d_model//2, d_model)
+            )
+        else:
+            self.seq_proj = nn.Linear(in_seq_dim, d_model)
+
         self.normalize = nn.BatchNorm1d(in_seq_dim)
-        self.seq_proj = nn.Sequential(
-            nn.Linear(in_seq_dim, d_model//2),
-            nn.ReLU(),
-            nn.Linear(d_model//2, d_model)
-        )
 
         assert d_model % 2 == 0, "d_model must be even"
         self.pos_encoder = PositionalEncoding(d_model)
@@ -111,6 +122,12 @@ class AccelTransformer(nn.Module):
         x_seq: (batch, seq_len=5, 3)
         x_meta: (batch, n_meta_features) or None if use_metadata=False
         """
+
+        if self.use_vec_mag:
+            magnitude = torch.norm(x_seq, dim=2, keepdim=True)
+            x_seq = torch.cat([x_seq, magnitude], dim=2)
+            
+
         x = x_seq.transpose(1, 2)
         x = self.normalize(x)
         x = x.transpose(1, 2)
