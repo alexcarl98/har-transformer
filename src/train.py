@@ -21,7 +21,7 @@ import yaml
 import wandb
 from datetime import datetime
 from torchinfo import summary
-DEBUG_MODE = True
+DEBUG_MODE = False
 run = None
 
 ANSI_CYAN = "\033[96m"

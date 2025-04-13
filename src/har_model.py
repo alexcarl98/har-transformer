@@ -65,9 +65,10 @@ class AccelTransformer(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
                  in_seq_dim=3, in_meta_dim=3, nhead=4, 
                  num_layers=2, dropout=0.1, num_classes=6,
-                 accel_range=(-15, 15)):
+                 accel_range=(-15, 15), use_metadata=False):
         super().__init__()
         
+        self.use_metadata = use_metadata
         self.normalize = nn.BatchNorm1d(in_seq_dim)
         self.seq_proj = nn.Sequential(
             nn.Linear(in_seq_dim, d_model//2),
@@ -75,24 +76,28 @@ class AccelTransformer(nn.Module):
             nn.Linear(d_model//2, d_model)
         )
 
-        # Make sure d_model is divisible by 2 for the positional encoding
         assert d_model % 2 == 0, "d_model must be even"
-        self.pos_encoder = PositionalEncoding(d_model)  # Changed from d_model//2 to d_model
+        self.pos_encoder = PositionalEncoding(d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, 
                                                    nhead=nhead,
                                                    dim_feedforward=128, 
                                                    dropout=dropout)
-                                                #    dropout=dropout,
-                                                #    batch_first=True)
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, 
             num_layers=num_layers)
 
-        # Simplified meta projection to match dimensions
-        meta_hidden_dim = 16  # or even smaller, like 8
-        self.meta_proj = nn.Linear(in_meta_dim, meta_hidden_dim)
-        combined_dim = d_model + meta_hidden_dim
+        # Only create metadata layers if using metadata
+        if use_metadata:
+            meta_hidden_dim = d_model
+            self.meta_proj = nn.Sequential(
+                nn.Linear(in_meta_dim, d_model//2),
+                nn.ReLU(),
+                nn.Linear(d_model//2, d_model)
+            )
+            combined_dim = d_model + meta_hidden_dim
+        else:
+            combined_dim = d_model
 
         self.classifier = nn.Sequential(
             nn.Linear(combined_dim, fc_hidden_dim),
@@ -101,27 +106,28 @@ class AccelTransformer(nn.Module):
             nn.Linear(fc_hidden_dim, num_classes)
         )
 
-    def forward(self, x_seq, x_meta):
+    def forward(self, x_seq, x_meta=None):
         """
         x_seq: (batch, seq_len=5, 3)
-        x_meta: (batch, n_meta_features)
+        x_meta: (batch, n_meta_features) or None if use_metadata=False
         """
-        x = x_seq.transpose(1, 2)  # (batch, 3, seq_len)
-        x = self.normalize(x)      # BatchNorm1d expects (batch, channels, length)
-        x = x.transpose(1, 2)      # (batch, seq_len, 3)
+        x = x_seq.transpose(1, 2)
+        x = self.normalize(x)
+        x = x.transpose(1, 2)
         
-        x = self.seq_proj(x)         # (batch, seq_len, d_model)
-        x = self.pos_encoder(x)      # (batch, seq_len, d_model)
+        x = self.seq_proj(x)
+        x = self.pos_encoder(x)
 
-        x = x.permute(1, 0, 2)       # (seq_len, batch, d_model)
-        x = self.transformer_encoder(x)  # (seq_len, batch, d_model)
-        x = x.mean(dim=0)            # (batch, d_model)
+        x = x.permute(1, 0, 2)
+        x = self.transformer_encoder(x)
+        x = x.mean(dim=0)
 
-        meta = self.meta_proj(x_meta)  # (batch, meta_hidden_dim)
+        if self.use_metadata:
+            assert x_meta is not None, "Metadata expected but not provided"
+            meta = self.meta_proj(x_meta)
+            x = torch.cat([x, meta], dim=1)
 
-        combined = torch.cat([x, meta], dim=1)  # (batch, d_model + meta_hidden_dim)
-
-        return self.classifier(combined)  # (batch, num_classes)
+        return self.classifier(x)
 
 
 class XYZLSTM(nn.Module):
