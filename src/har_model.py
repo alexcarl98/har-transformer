@@ -46,6 +46,7 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(
             torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
         )
+        div_term = torch.exp(-math.log(10000.0) * torch.arange(0, d_model, 2).float() / d_model)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)  # shape: (1, max_len, d_model)
@@ -67,15 +68,17 @@ class AccelTransformer(nn.Module):
                  accel_range=(-15, 15)):
         super().__init__()
         
-        self.normalize = nn.LayerNorm(in_seq_dim)
+        # self.normalize = nn.LayerNorm(in_seq_dim)
         self.seq_proj = nn.Linear(in_seq_dim, d_model)
 
         # Make sure d_model is divisible by 2 for the positional encoding
         assert d_model % 2 == 0, "d_model must be even"
         self.pos_encoder = PositionalEncoding(d_model)  # Changed from d_model//2 to d_model
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead,
-                                                   dim_feedforward=128, dropout=dropout,
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, 
+                                                   nhead=nhead,
+                                                   dim_feedforward=128, 
+                                                   dropout=dropout,
                                                    norm_first=True)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
@@ -100,7 +103,7 @@ class AccelTransformer(nn.Module):
         x_seq: (batch, seq_len=5, 3)
         x_meta: (batch, n_meta_features)
         """
-        x = self.normalize(x_seq)
+        # x = self.normalize(x_seq)
         x = self.seq_proj(x)         # (batch, seq_len, d_model)
         x = self.pos_encoder(x)      # (batch, seq_len, d_model)
 
