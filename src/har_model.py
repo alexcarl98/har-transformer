@@ -68,8 +68,12 @@ class AccelTransformer(nn.Module):
                  accel_range=(-15, 15)):
         super().__init__()
         
-        # self.normalize = nn.LayerNorm(in_seq_dim)
-        self.seq_proj = nn.Linear(in_seq_dim, d_model)
+        self.normalize = nn.BatchNorm1d(in_seq_dim)
+        self.seq_proj = nn.Sequential(
+            nn.Linear(in_seq_dim, d_model//2),
+            nn.ReLU(),
+            nn.Linear(d_model//2, d_model)
+        )
 
         # Make sure d_model is divisible by 2 for the positional encoding
         assert d_model % 2 == 0, "d_model must be even"
@@ -78,8 +82,9 @@ class AccelTransformer(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, 
                                                    nhead=nhead,
                                                    dim_feedforward=128, 
-                                                   dropout=dropout,
-                                                   batch_first=True)
+                                                   dropout=dropout)
+                                                #    dropout=dropout,
+                                                #    batch_first=True)
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, 
             num_layers=num_layers)
@@ -101,17 +106,20 @@ class AccelTransformer(nn.Module):
         x_seq: (batch, seq_len=5, 3)
         x_meta: (batch, n_meta_features)
         """
-        # x = self.normalize(x_seq)
-        x = self.seq_proj(x_seq)         # (batch, seq_len, d_model)
+        x = x_seq.transpose(1, 2)  # (batch, 3, seq_len)
+        x = self.normalize(x)      # BatchNorm1d expects (batch, channels, length)
+        x = x.transpose(1, 2)      # (batch, seq_len, 3)
+        
+        x = self.seq_proj(x)         # (batch, seq_len, d_model)
         x = self.pos_encoder(x)      # (batch, seq_len, d_model)
 
         x = x.permute(1, 0, 2)       # (seq_len, batch, d_model)
         x = self.transformer_encoder(x)  # (seq_len, batch, d_model)
         x = x.mean(dim=0)            # (batch, d_model)
 
-        meta = self.meta_proj(x_meta)  # (batch, d_model)
+        meta = self.meta_proj(x_meta)  # (batch, meta_hidden_dim)
 
-        combined = torch.cat([x, meta], dim=1)  # (batch, d_model * 2)
+        combined = torch.cat([x, meta], dim=1)  # (batch, d_model + meta_hidden_dim)
 
         return self.classifier(combined)  # (batch, num_classes)
 

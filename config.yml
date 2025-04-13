@@ -39,15 +39,15 @@ random_forest:
 
 transformer:
   <<: *base_model
-  test_size: 0.2
+  test_size: 0.3
   warmup_ratio: 0.08  # percentage of total steps for warmup
   min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
   batch_size: 64
-  patience: 18
+  patience: 20
   learning_rate: 0.0015
   weight_decay: 0.001
   epochs: 17
-  d_model: 66
+  d_model: 6
   fc_hidden_dim: 128
   nhead: 6
   num_layers: 2
