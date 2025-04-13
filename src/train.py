@@ -20,8 +20,8 @@ from utils import TConfig
 import yaml
 import wandb
 from datetime import datetime
-
-DEBUG_MODE = True
+from torchinfo import summary
+DEBUG_MODE = False
 run = None
 
 ANSI_CYAN = "\033[96m"
@@ -590,6 +590,12 @@ if __name__ == "__main__":
         num_layers=args.num_layers,
         dropout=args.dropout
     ).to(DEVICE)
+    input_size = [
+        (args.batch_size, args.window_size, args.in_seq_dim),  # x_seq shape
+        (args.batch_size, args.in_meta_dim),                   # x_meta shape
+    ]
+
+    summary(model, input_size)
     # model = XYZLSTM(
     #     in_seq_dim=args.in_seq_dim,
     #     hidden_dim=args.fc_hidden_dim,

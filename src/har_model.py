@@ -79,16 +79,14 @@ class AccelTransformer(nn.Module):
                                                    nhead=nhead,
                                                    dim_feedforward=128, 
                                                    dropout=dropout,
-                                                   norm_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+                                                   batch_first=True)
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer, 
+            num_layers=num_layers)
 
         # Simplified meta projection to match dimensions
         meta_hidden_dim = 16  # or even smaller, like 8
-        self.meta_proj = nn.Sequential(
-            nn.Linear(in_meta_dim, meta_hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout)
-        )
+        self.meta_proj = nn.Linear(in_meta_dim, meta_hidden_dim)
         combined_dim = d_model + meta_hidden_dim
 
         self.classifier = nn.Sequential(

@@ -44,7 +44,7 @@ transformer:
   min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
   batch_size: 64
   patience: 18
-  learning_rate: 0.0013
+  learning_rate: 0.0015
   weight_decay: 0.001
   epochs: 17
   d_model: 66
