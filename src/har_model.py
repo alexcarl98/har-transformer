@@ -43,9 +43,9 @@ class PositionalEncoding(nn.Module):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
+        # div_term = torch.exp(
+        #     torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
+        # )
         div_term = torch.exp(-math.log(10000.0) * torch.arange(0, d_model, 2).float() / d_model)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -104,7 +104,7 @@ class AccelTransformer(nn.Module):
         x_meta: (batch, n_meta_features)
         """
         # x = self.normalize(x_seq)
-        x = self.seq_proj(x)         # (batch, seq_len, d_model)
+        x = self.seq_proj(x_seq)         # (batch, seq_len, d_model)
         x = self.pos_encoder(x)      # (batch, seq_len, d_model)
 
         x = x.permute(1, 0, 2)       # (seq_len, batch, d_model)

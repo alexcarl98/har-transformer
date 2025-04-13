@@ -450,7 +450,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
         true = []
         correct = 0
         total = 0
-        # print(f'Epoch {current_epoch}/{args.epochs}:')
+        print(f'Epoch {current_epoch}/{args.epochs}:')
         print(f"===(Training)===")
         pbar = tqdm(train_loader)
         # print("Model weights:", model.classifier[0].weight.data.shape)
