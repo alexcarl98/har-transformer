@@ -6,10 +6,11 @@ RANDOM_SEED = 42
 no_ankle = ['026','027', '028','029', '030']      # missing ankle data for these subjects
 dont_have_jogging = ['013', '037', '038']
 incomplete = dont_have_jogging + no_ankle
-dataset_numbers = ['001', '002', '004', '008','010','011','012',
+weird = ['002', '040']
+dataset_numbers = ['001', '004', '008','010','011','012',
                    '015','016','017', '018', '019', '020',
                    '021','022','024','025', '031', '032', '033', 
-                   '034','035','036', '039', '040', '041'
+                   '035','036', '039', '041'
                    ]
 debug_set = ['001', '002', '004', '008','010','011','012']
 # dataset_numbers = no_ankle + dont_have_jogging + dataset_numbers

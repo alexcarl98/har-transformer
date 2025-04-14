@@ -127,6 +127,8 @@ def derive_periodic_features(t, period):
     ω = (2*π) / period
     return np.sin(ω*t), np.cos(ω*t)
 
+
+
 # def tensors_equal(new_data, old_data):
 #     for i, (new, old) in enumerate(zip(new_data, old_data)):
 #         if isinstance(new, torch.Tensor):
@@ -148,3 +150,64 @@ def derive_periodic_features(t, period):
 #             print(f"Old value: {old}")
 #             return False
 #     return True
+
+def load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc='waist'):
+    """
+    Load and process data with middle chunk selection for each activity.
+    """
+    feature_cols = [f'{sensor_loc}_{ft}' for ft in args.ft_col]
+    df = pd.read_csv(file_path, parse_dates=[TIME_COL])
+    df = df.sort_values(TIME_COL)
+
+    # Identify contiguous class blocks
+    df['class_change'] = (df[LABELS_COL] != df[LABELS_COL].shift()).cumsum()
+
+    # Store results
+    X_windows = []
+    X_meta = []
+    y_labels = []
+
+    # Process each contiguous block
+    for _, group in df.groupby('class_change'):
+        if len(group) >= args.window_size:
+            features = group[feature_cols].values
+            label = group[LABELS_COL].iloc[0]
+
+            if label['activity'] not in args.classes:
+                continue
+            
+            # Select middle chunk
+            middle_index = len(features) // 2
+            start_index = max(0, middle_index - chunk_size//2)
+            end_index = min(len(features), middle_index + chunk_size//2)
+            chunk_features = features[start_index:end_index]
+            
+            if len(chunk_features) < chunk_size:
+                print(f"Warning: Activity '{label['activity']}' has only {len(chunk_features)} data points (less than {chunk_size})")
+            
+            # Sliding window over the chunk
+            for i in range(0, len(chunk_features) - args.window_size + 1, args.stride):
+                window = chunk_features[i:i+args.window_size]
+                meta_data = selective_extract_window_signal_features(window, args)
+                assert len(meta_data) == args.in_meta_dim
+                
+                X_windows.append(window)
+                X_meta.append(meta_data)
+                y_labels.append(label['activity'])
+
+    # Only convert to arrays if we have data
+    if X_windows:
+        X_windows = np.array(X_windows)
+        X_meta = np.array(X_meta)
+        y_labels = np.array(y_labels)
+        
+        # Print summary
+        # print(f"\nProcessed {file_path} with {sensor_loc}:")
+        # unique, counts = np.unique(y_labels, return_counts=True)
+        # for activity, count in zip(unique, counts):
+        #     print(f"{activity}: {count} windows")
+        
+        return X_windows, X_meta, y_labels
+    else:
+        print(f"Warning: No valid windows created for {file_path} with {sensor_loc}")
+        return None, None, None

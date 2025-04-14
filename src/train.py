@@ -10,7 +10,7 @@ import random
 from tqdm import tqdm
 from constants import *
 from sklearn.metrics import classification_report, accuracy_score
-from preprocessing import load_and_process_data, split_data, encode_labels
+from preprocessing import load_and_process_data, split_data, encode_labels, load_and_process_data_with_chunks
 from har_model import AccelTransformer, HARWindowDataset, CNNTransformerHAR, XYZLSTM
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import label_binarize
@@ -312,18 +312,20 @@ def partition_across_subjects(data_paths, args):
     all_subjects = [] 
 
     for file_path in tqdm(data_paths):
-        subject_data = [] 
-        
+        subject_data = []
         for sensor_loc in args.sensor_loc:
             try:
-                X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
-                temp = y.tolist()
-                y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
-                subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
+                # X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+                X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
+                if X is not None:
+                    # Convert string labels directly to encoded form - no need for [0] access
+                    y_encoded = np.array([args.encoder_dict[label] for label in y])
+                    subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
             except Exception as e:
                 print(f"Error processing {file_path} with {sensor_loc}: {e}")
                 continue
-        all_subjects.append(subject_data)
+        if subject_data:
+            all_subjects.append(subject_data)
 
     def alt_format_data(all_subjects, indices):
         # Start with first subject's data
@@ -365,7 +367,11 @@ def partition_across_sensors(data_paths, args):
     for file_path in tqdm(data_paths):
         for sensor_loc in args.sensor_loc:
             try:
-                X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+                # X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+                X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
+                print(f"Data shapes - X: {X.shape}, X_meta: {X_meta.shape}, y: {y.shape}")
+                print(f"Unique activities in y: {np.unique(y)}")
+                
                 X_all.append(X)
                 X_meta_all.append(X_meta)
                 y_all.append(y)

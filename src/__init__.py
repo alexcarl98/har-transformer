@@ -4,3 +4,4 @@ from .train import *
 from .real_time import *
 from .create_sweep import *
 from .utils import *
+from .har_transformer import *

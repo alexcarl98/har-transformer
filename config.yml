@@ -1,5 +1,5 @@
 model: &base_model
-  data_dir: "raw_data/"
+  data_dir: "har_data/"
   out_data_dir: "processed_data/"
   output_dir: "doc/latex/figure/"
   model_out_dir: "models/"
@@ -25,9 +25,10 @@ model: &base_model
     - "walk_treadmill"
     # - "walk_mixed"
     # - "walk_sidewalk"
-  window_size: 150
-  stride: 3
+  window_size: 100
+  stride: 50
   save_pkl: False
+  test_size: 0.3
   
 # ==== Model Training ====
 random_forest:
@@ -39,7 +40,6 @@ random_forest:
 
 transformer:
   <<: *base_model
-  test_size: 0.3
   warmup_ratio: 0.08  # percentage of total steps for warmup
   min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
   batch_size: 128
