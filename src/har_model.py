@@ -60,6 +60,30 @@ class PositionalEncoding(nn.Module):
         return x
 
 
+class RelativePositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=500):
+        super().__init__()
+        self.rel_pos_embedding = nn.Parameter(torch.randn(2 * max_len - 1, d_model))
+        positions = torch.arange(max_len).unsqueeze(1)
+        rel_positions = positions - positions.T + max_len - 1
+        self.register_buffer('rel_positions', rel_positions)
+        
+    def forward(self, x):
+        """x: (batch_size, seq_len, d_model)"""
+        seq_len = x.size(1)
+        rel_pos = self.rel_pos_embedding[self.rel_positions[:seq_len, :seq_len]]
+        return x, rel_pos  # Used differently in attention mechanism
+
+class LearnablePositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=500):
+        super().__init__()
+        self.pos_embedding = nn.Parameter(torch.randn(1, max_len, d_model))
+        
+    def forward(self, x):
+        """x: (batch_size, seq_len, d_model)"""
+        return x + self.pos_embedding[:, :x.size(1), :]
+
+
 # === Transformer Model for HAR ===
 class AccelTransformer(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
@@ -88,7 +112,9 @@ class AccelTransformer(nn.Module):
         self.normalize = nn.BatchNorm1d(in_seq_dim)
 
         assert d_model % 2 == 0, "d_model must be even"
-        self.pos_encoder = PositionalEncoding(d_model)
+        # self.pos_encoder = PositionalEncoding(d_model)
+        # self.pos_encoder = RelativePositionalEncoding(d_model)
+        self.pos_encoder = LearnablePositionalEncoding(d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, 
                                                    nhead=nhead,
@@ -119,25 +145,25 @@ class AccelTransformer(nn.Module):
 
     def forward(self, x_seq, x_meta=None):
         """
-        x_seq: (batch, seq_len=5, 3)
+        x_seq: (batch, seq_len=100, 3)
         x_meta: (batch, n_meta_features) or None if use_metadata=False
         """
 
         if self.use_vec_mag:
             magnitude = torch.norm(x_seq, dim=2, keepdim=True)
-            x_seq = torch.cat([x_seq, magnitude], dim=2)
-            
-
-        x = x_seq.transpose(1, 2)
-        x = self.normalize(x)
-        x = x.transpose(1, 2)
+            x_seq = torch.cat([x_seq, magnitude], dim=2)        # (batch, seq_len, 4)
         
-        x = self.seq_proj(x)
-        x = self.pos_encoder(x)
+        # let's assume use_vec_mag is True...
+        x = x_seq.transpose(1, 2)        # (batch, 4, seq_len) : transpose axes
+        x = self.normalize(x)            # (batch, 4, seq_len) : normalize across axes
+        x = x.transpose(1, 2)            # (batch, seq_len, 4) : transpose axes back
+        
+        x = self.seq_proj(x)             # (batch, seq_len, d_model) : project to d_model
+        x = self.pos_encoder(x)          # (batch, seq_len, d_model)
 
-        x = x.permute(1, 0, 2)
-        x = self.transformer_encoder(x)
-        x = x.mean(dim=0)
+        x = x.permute(1, 0, 2)          # (seq_len, batch, d_model) : permute axes, would be unecessary when batch_first=True
+        x = self.transformer_encoder(x) # (seq_len, batch, d_model)
+        x = x.mean(dim=0)               # (batch, d_model) : dim=1 if batch_first=True
 
         if self.use_metadata:
             assert x_meta is not None, "Metadata expected but not provided"
@@ -161,11 +187,6 @@ class XYZLSTM(nn.Module):
         _, (h_n, _) = self.lstm(x)
         return self.fc(h_n[-1])
         
-        
-
-# import torch
-# import torch.nn as nn
-# import math
 
 class CNNTRNPositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=500):

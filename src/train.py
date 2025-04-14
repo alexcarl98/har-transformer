@@ -539,9 +539,9 @@ if __name__ == "__main__":
     
     if not DEBUG_MODE:
         run.config.update(config['transformer'])
-        with open("sweep.yaml", "r") as f:
-            sweep_config = yaml.safe_load(f)
-        sweep_id = wandb.sweep(sweep_config)
+        # with open("sweep.yaml", "r") as f:
+        #     sweep_config = yaml.safe_load(f)
+        # sweep_id = wandb.sweep(sweep_config)
     else:
         print(f"{ANSI_CYAN}DEBUG MODE: Will not log to wandb{ANSI_RESET}")
 
