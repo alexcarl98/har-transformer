@@ -11,7 +11,7 @@ from tqdm import tqdm
 from constants import *
 from sklearn.metrics import classification_report, accuracy_score
 from preprocessing import load_and_process_data, split_data, encode_labels, load_and_process_data_with_chunks
-from har_model import AccelTransformer, HARWindowDataset, CNNTransformerHAR, XYZLSTM
+from har_model import AccelTransformer, HARWindowDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc
@@ -318,11 +318,14 @@ def partition_across_subjects(data_paths, args):
         for sensor_loc in args.sensor_loc:
             try:
                 X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+                temp = list(y)
+                y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
+                subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
                 # X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
-                if X is not None:
-                    # Convert string labels directly to encoded form - no need for [0] access
-                    y_encoded = np.array([args.encoder_dict[label] for label in y])
-                    subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
+                # if X is not None:
+                #     # Convert string labels directly to encoded form - no need for [0] access
+                #     y_encoded = np.array([args.encoder_dict[label] for label in y])
+                #     subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
             except Exception as e:
                 print(f"Error processing {file_path} with {sensor_loc}: {e}")
                 continue
@@ -501,7 +504,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
 
         # Validation phase
         print(f"===(Validation)===")
-        avg_val_loss, f1 = evaluate_model(model, val_loader, criterion)
+        avg_val_loss, f1 = evaluate_model(model, val_data, criterion)
         print(f"Validation - Avg Loss: {avg_val_loss:.4f}, F1 Score: {f1:.4f}")
 
         if not DEBUG_MODE:
@@ -540,7 +543,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
 
 
 if __name__ == "__main__":
-    ADD_NOISY_DATA = False
+    ADD_NOISY_DATA = True
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
 

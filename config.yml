@@ -1,5 +1,5 @@
 model: &base_model
-  data_dir: "har_data/"
+  data_dir: "raw_data/"
   out_data_dir: "processed_data/"
   output_dir: "doc/latex/figure/"
   model_out_dir: "models/"
