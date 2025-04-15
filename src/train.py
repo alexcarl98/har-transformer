@@ -17,6 +17,7 @@ from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc
 import logging
 from utils import TConfig
+import model_version.v0 as v0
 import yaml
 import wandb
 from datetime import datetime
@@ -316,8 +317,8 @@ def partition_across_subjects(data_paths, args):
         subject_data = []
         for sensor_loc in args.sensor_loc:
             try:
-                # X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
-                X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
+                X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+                # X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
                 if X is not None:
                     # Convert string labels directly to encoded form - no need for [0] access
                     y_encoded = np.array([args.encoder_dict[label] for label in y])
@@ -368,8 +369,8 @@ def partition_across_sensors(data_paths, args):
     for file_path in tqdm(data_paths):
         for sensor_loc in args.sensor_loc:
             try:
-                # X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
-                X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
+                X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
+                # X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
                 print(f"Data shapes - X: {X.shape}, X_meta: {X_meta.shape}, y: {y.shape}")
                 print(f"Unique activities in y: {np.unique(y)}")
                 
@@ -609,7 +610,7 @@ if __name__ == "__main__":
 
 
     # === Model, loss, optimizer ===
-    model = AccelTransformer(
+    model = v0.AccelTransformer(
         d_model=args.d_model,
         fc_hidden_dim=args.fc_hidden_dim,
         num_classes=args.num_classes,
@@ -619,6 +620,16 @@ if __name__ == "__main__":
         num_layers=args.num_layers,
         dropout=args.dropout
     ).to(DEVICE)
+    # model = AccelTransformer(
+    #     d_model=args.d_model,
+    #     fc_hidden_dim=args.fc_hidden_dim,
+    #     num_classes=args.num_classes,
+    #     in_seq_dim=args.in_seq_dim,
+    #     in_meta_dim=args.in_meta_dim,
+    #     nhead=args.nhead,
+    #     num_layers=args.num_layers,
+    #     dropout=args.dropout
+    # ).to(DEVICE)
     print(model)
 
     optimizer = Adam(model.parameters(),

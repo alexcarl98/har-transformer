@@ -26,7 +26,7 @@ model: &base_model
     # - "walk_mixed"
     # - "walk_sidewalk"
   window_size: 100
-  stride: 25
+  stride: 5
   save_pkl: False
   test_size: 0.3
   
@@ -42,17 +42,32 @@ transformer:
   <<: *base_model
   warmup_ratio: 0.08  # percentage of total steps for warmup
   min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
-  batch_size: 32
-  patience: 40
-  learning_rate: 0.001
-  weight_decay: 0.000
-  epochs: 70
-  d_model: 64
+  batch_size: 64
+  patience: 20
+  learning_rate: 0.0015
+  weight_decay: 0.001
+  epochs: 17
+  d_model: 6
   fc_hidden_dim: 128
-  nhead: 8
-  num_layers: 3
-  dropout: 0.11
+  nhead: 6
+  num_layers: 2
+  dropout: 0.1
   load_model_path: ''
+  # warmup_ratio: 0.08  # percentage of total steps for warmup
+  # min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
+  # batch_size: 32
+  # patience: 10
+  # learning_rate: 0.0016  # want to try 0.006
+  # weight_decay: 0.000
+  # epochs: 25
+  # d_model: 6
+  # fc_hidden_dim: 128
+  # nhead: 6
+  # num_layers: 2
+  # dropout: 0.16
+  # load_model_path: ''
+  # Keep epochs low right now
+  # 
 
     # NOTE:
     # self.head_dim * num_heads == self.embed_dim

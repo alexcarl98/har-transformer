@@ -121,12 +121,11 @@ class TConfig:
                 },
                 "epochs": {
                     "distribution": "categorical",
-                    "values": [10, 20, 30, 40, 50, 60, 70, 80]
+                    "values": [10, 20, 30, 40]
                 },
                 "fc_hidden_dim": {
-                    "distribution": "int_uniform",
-                    "min": 64,
-                    "max": 512
+                    "distribution": "categorical",
+                    "values": [128, 256, 300, 400, 512]
                 },
                 "learning_rate": {
                     "distribution": "uniform",
