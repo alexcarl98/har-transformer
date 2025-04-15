@@ -43,10 +43,10 @@ transformer:
   warmup_ratio: 0.08  # percentage of total steps for warmup
   min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
   batch_size: 128
-  patience: 20
+  patience: 40
   learning_rate: 0.001
   weight_decay: 0.000
-  epochs: 10
+  epochs: 20
   d_model: 64
   fc_hidden_dim: 128
   nhead: 8

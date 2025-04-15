@@ -93,6 +93,44 @@ class TConfig:
         with open(yaml_path, "r") as f:
             config = yaml.safe_load(f)
         return cls(**config['transformer'])
+    
+
+
+
+@dataclass
+class RandomForestConfig:
+    data_dir: str = "raw_data/"
+    out_data_dir: str = "processed_data/"
+    output_dir: str = "doc/latex/figure/"
+    model_out_dir: str = "models/"
+    random_seed: int = 42
+    sensor_loc: List[str] = field(default_factory=lambda: ["waist", "ankle", "wrist"])
+    ft_col: List[str] = field(default_factory=lambda: ["x", "y", "z"])
+    extracted_features: List[str] = field(default_factory=lambda: ["mean", "std"])
+    classes: List[str] = field(default_factory=lambda: ["downstairs", "jog_treadmill", "upstairs", "walk_mixed", "walk_sidewalk", "walk_treadmill"])
+    window_size: int = 100
+    stride: int = 10
+    save_pkl: bool = False
+    test_size: float = 0.4
+    n_estimators: int = 100
+    max_depth: int = 10
+    min_samples_split: int = 2
+    min_samples_leaf: int = 1
+
+    def __post_init__(self):
+        self.encoder_dict = {label: idx for idx, label in enumerate(self.classes)}
+        self.decoder_dict = {idx: label for idx, label in enumerate(self.classes)}
+
+    @property
+    def num_classes(self):
+        return len(self.classes)
+
+    @classmethod
+    def from_yaml(cls, yaml_path: str):
+        with open(yaml_path, "r") as f:
+            config = yaml.safe_load(f)
+        return cls(**config['random_forest'])
+
 
 
 if __name__ == "__main__":

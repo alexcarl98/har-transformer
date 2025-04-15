@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from scipy import stats
 from scipy.fft import fft
+from utils import RandomForestConfig
 
 TARGET_COLUMN = 'activity'
 SENSOR_LOCS=['ankle']
@@ -141,7 +142,7 @@ def combine_datasets(dataset_numbers, train_datasets, sensor_locs=['ankle'], xft
             columns_to_keep = ['time', f'{sensor_loc}_x', f'{sensor_loc}_y', f'{sensor_loc}_z', 'activity']
             processed_df = process_activity_chunks(df, columns_to_keep)
             processed_df = standardize_columns(processed_df, sensor_loc)
-            print(processed_df.head())
+            # print(processed_df.head())
             if xft:
                 features, labels = extract_features(processed_df, sensor_loc='acc')
                 if i == 0:
@@ -278,19 +279,20 @@ def apply_pca(X_train, X_test, n_components=0.95):
 
 
 def main():
+    args = RandomForestConfig.from_yaml('config.yml')
     # Define dataset splits (example: 80% train, 20% test)
-    np.random.seed(42)
+    np.random.seed(args.random_seed)
     
     all_datasets = np.array(dataset_numbers)
     np.random.shuffle(all_datasets)
-    train_size = int(0.8 * len(all_datasets))
+    train_size = int((1-args.test_size) * len(all_datasets))
     train_datasets = all_datasets[:train_size]
     
     # Get train/test split data
     X_train, X_test, y_train, y_test, feature_names = combine_datasets(
         dataset_numbers, 
         train_datasets,
-        sensor_locs=['ankle', 'wrist', 'waist'],
+        sensor_locs=args.sensor_loc,
         xft=True
     )
     
