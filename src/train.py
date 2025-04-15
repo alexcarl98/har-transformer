@@ -22,6 +22,7 @@ import wandb
 from datetime import datetime
 from torchinfo import summary
 DEBUG_MODE = False
+DO_SWEEP = True
 run = None
 
 ANSI_CYAN = "\033[96m"
@@ -542,18 +543,40 @@ if __name__ == "__main__":
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
 
-    
     if not DEBUG_MODE:
-        run.config.update(config['transformer'])
-        # with open("sweep.yaml", "r") as f:
-        #     sweep_config = yaml.safe_load(f)
-        # sweep_id = wandb.sweep(sweep_config)
+        run = wandb.init(
+            entity="alex-alvarez1903-loyola-marymount-university",
+            project="HAR-PosTransformer"
+        )
+        # If we're in a sweep, this will use the sweep config
+        # If not, it will use the default config from config.yml
+        if wandb.run.sweep_id is not None:
+            config = wandb.config
+        else:
+            with open("config.yml", "r") as f:
+                config = yaml.safe_load(f)['transformer']
+                wandb.config.update(config)
     else:
-        print(f"{ANSI_CYAN}DEBUG MODE: Will not log to wandb{ANSI_RESET}")
+        with open("config.yml", "r") as f:
+            config = yaml.safe_load(f)['transformer']
+            
+    args = TConfig(**config)
+    # if not DEBUG_MODE:
+    #     run.config.update(config['transformer'])
+    #     if wandb.run.sweep_id is not None:
+    #         config = wandb.config
+    #     else:
+    #         with open("config.yml", "r") as f:
+    #             config = yaml.safe_load(f)['transformer']
+    #             wandb.config.update(config)
+        
+    # else:
+    #     print(f"{ANSI_CYAN}DEBUG MODE: Will not log to wandb{ANSI_RESET}")
 
-    args = TConfig(**config['transformer'])
-    # if DEBUG_MODE:
-    #     dataset_numbers = debug_set
+    # args = TConfig(**config['transformer'])
+
+
+
     raw_data_paths = [f"{args.data_dir}{num}.csv" for num in dataset_numbers]
     incomplete_data_paths = [f"{args.data_dir}{num}.csv" for num in incomplete]
 
@@ -597,40 +620,7 @@ if __name__ == "__main__":
         dropout=args.dropout
     ).to(DEVICE)
     print(model)
-    # exit()
-    # input_size = [
-    #     (args.batch_size, args.window_size, args.in_seq_dim),  # x_seq shape
-    #     (args.batch_size, args.in_meta_dim),                   # x_meta shape
-    # ]
 
-    # summary(model, input_size)
-    # model = XYZLSTM(
-    #     in_seq_dim=args.in_seq_dim,
-    #     hidden_dim=args.fc_hidden_dim,
-    #     num_classes=args.num_classes
-    # ).to(DEVICE)
-    # model = AccelTransformer(
-    #     d_model=args.d_model,
-    #     fc_hidden_dim=args.fc_hidden_dim,
-    #     num_classes=args.num_classes,
-    #     in_seq_dim=args.in_seq_dim,
-    #     in_meta_dim=args.in_meta_dim,
-    #     nhead=args.nhead,
-    #     num_layers=args.num_layers,
-    #     dropout=args.dropout
-    # ).to(DEVICE)
-    # model = CNNTransformerHAR(
-    #     num_classes=args.num_classes,
-    #     seq_len=args.window_size,
-    #     in_seq_dim=args.in_seq_dim,
-    #     in_meta_dim=args.in_meta_dim,
-    #     nhead=args.nhead,
-    #     num_layers=args.num_layers,
-    #     dropout=args.dropout
-    # ).to(DEVICE)
-        # d_model=args.d_model,
-        # cnn_out_channels=args.cnn_out_channels,
-        # fc_hidden_dim=args.fc_hidden_dim,
     optimizer = Adam(model.parameters(),
                       lr=args.learning_rate, 
                       weight_decay=args.weight_decay)

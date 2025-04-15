@@ -26,7 +26,7 @@ model: &base_model
     # - "walk_mixed"
     # - "walk_sidewalk"
   window_size: 100
-  stride: 50
+  stride: 25
   save_pkl: False
   test_size: 0.3
   
@@ -42,11 +42,11 @@ transformer:
   <<: *base_model
   warmup_ratio: 0.08  # percentage of total steps for warmup
   min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
-  batch_size: 128
+  batch_size: 32
   patience: 40
   learning_rate: 0.001
   weight_decay: 0.000
-  epochs: 20
+  epochs: 70
   d_model: 64
   fc_hidden_dim: 128
   nhead: 8
