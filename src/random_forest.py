@@ -10,29 +10,80 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from scipy import stats
 from scipy.fft import fft
-from utils import RandomForestConfig
+from dataclasses import dataclass, field
+import yaml
+from typing import List
+
+@dataclass
+class DataConfig:
+    data_dir: str = "raw_data/"
+    out_data_dir: str = "processed_data/"
+    model_out_dir: str = "models/"
+    random_seed: int = 42
+    sensor_loc: List[str] = field(default_factory=lambda: ["waist", "ankle", "wrist"])
+    ft_col: List[str] = field(default_factory=lambda: ["x", "y", "z"])
+    extracted_features: List[str] = field(default_factory=lambda: ["mean", "std"])
+    classes: List[str] = field(default_factory=lambda: ["downstairs", "jog_treadmill", "upstairs", "walk_mixed", "walk_sidewalk", "walk_treadmill"])
+    window_size: int = 100
+    stride: int = 10
+    save_pkl: bool = False
+
+@dataclass
+class RandomForestConfig:
+    data_dir: str = "raw_data/"
+    out_data_dir: str = "processed_data/"
+    output_dir: str = "doc/latex/figure/"
+    model_out_dir: str = "models/"
+    random_seed: int = 42
+    sensor_loc: List[str] = field(default_factory=lambda: ["waist", "ankle", "wrist"])
+    ft_col: List[str] = field(default_factory=lambda: ["x", "y", "z"])
+    extracted_features: List[str] = field(default_factory=lambda: ["mean", "std"])
+    classes: List[str] = field(default_factory=lambda: ["downstairs", "jog_treadmill", "upstairs", "walk_mixed", "walk_sidewalk", "walk_treadmill"])
+    window_size: int = 100
+    stride: int = 10
+    save_pkl: bool = False
+    test_size: float = 0.4
+    n_estimators: int = 100
+    max_depth: int = 10
+    min_samples_split: int = 2
+    min_samples_leaf: int = 1
+
+    def __post_init__(self):
+        self.encoder_dict = {label: idx for idx, label in enumerate(self.classes)}
+        self.decoder_dict = {idx: label for idx, label in enumerate(self.classes)}
+
+    @property
+    def num_classes(self):
+        return len(self.classes)
+
+    @classmethod
+    def from_yaml(cls, yaml_path: str):
+        with open(yaml_path, "r") as f:
+            config = yaml.safe_load(f)
+        return cls(**config['random_forest'])
 
 TARGET_COLUMN = 'activity'
 SENSOR_LOCS=['ankle']
-dataset_numbers = ['001', '004', '008','010','011','012',
-                   '015','016','017', '018', '019', '020',
-                   '021','022','024','025', '031', '032', '033', 
-                   '035','036', '039', '041'
+dataset_numbers = ['001','004','008','010','011','012',
+                   '015','016','017','018','019','020',
+                   '021','022','024','025','031','032',
+                   '033','035','036', '039','041'
                    ]
 
 ENCODER_DICT = {
-    'downstairs': [1, 0, 0, 0, 0, 0],
-    'jog_treadmill': [0, 1, 0, 0, 0, 0],
-    'upstairs': [0, 0, 1, 0, 0, 0],
-    'walk_mixed': [0, 0, 0, 1, 0, 0],
-    'walk_sidewalk': [0, 0, 0, 0, 1, 0],
-    'walk_treadmill': [0, 0, 0, 0, 0, 1]
+    'downstairs':       [1, 0, 0, 0, 0, 0],
+    'jog_treadmill':    [0, 1, 0, 0, 0, 0],
+    'upstairs':         [0, 0, 1, 0, 0, 0],
+    'walk_mixed':       [0, 0, 0, 1, 0, 0],
+    'walk_sidewalk':    [0, 0, 0, 0, 1, 0],
+    'walk_treadmill':   [0, 0, 0, 0, 0, 1]
 }
+
 ALT_ENCODER_DICT = {
-    'downstairs': [1, 0, 0, 0],
-    'jog_treadmill': [0, 1, 0, 0],
-    'upstairs': [0, 0, 1, 0],
-    'walk_treadmill': [0, 0, 0, 1],
+    'downstairs':      [1, 0, 0, 0],
+    'jog_treadmill':   [0, 1, 0, 0],
+    'upstairs':        [0, 0, 1, 0],
+    'walk_treadmill':  [0, 0, 0, 1],
 }
 
 def load_data(file_path):
@@ -72,28 +123,13 @@ def print_dataset_info(df):
     print("\nActivity distribution:")
     print(activity_counts)
 
-# def train_random_forest(X, y, test_size=0.3, random_state=42):
-#     """Train random forest model and return predictions and metrics."""
-#     # Split data
-#     X_train, X_test, y_train, y_test = train_test_split(
-#         X, y, test_size=test_size, random_state=random_state, stratify=y
-#     )
-
-#     # Train model
-#     print("Training Random Forest on raw accelerometer data...")
-#     rf_model = RandomForestClassifier(n_estimators=100, random_state=random_state)
-#     rf_model.fit(X_train, y_train)
-
-#     # Make predictions
-#     y_pred = rf_model.predict(X_test)
-    
-#     return rf_model, X_test, y_test, y_pred
 
 def print_classification_results(y_test, y_pred):
     """Print classification report and return confusion matrix."""
     print("\nClassification Report (Raw Data):")
     print(classification_report(y_test, y_pred))
     # return confusion_matrix(y_test, y_pred)
+
 
 def encode_activities(y, encoder_dict):
     """
@@ -104,15 +140,14 @@ def encode_activities(y, encoder_dict):
 
 
 def standardize_columns(df, sensor_loc):
-    """
-    Standardize accelerometer column names to acc_x, acc_y, acc_z regardless of sensor location.
-    """
+    """Standardize accelerometer column 
+    names to `acc_x`, `acc_y`, `acc_z` 
+    regardless of sensor location."""
     return df.rename(columns={
         f'{sensor_loc}_x': 'acc_x',
         f'{sensor_loc}_y': 'acc_y',
         f'{sensor_loc}_z': 'acc_z'
     })
-
 
 
 def combine_datasets(dataset_numbers, train_datasets, sensor_locs=['ankle'], xft=False):
