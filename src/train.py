@@ -582,7 +582,6 @@ if __name__ == "__main__":
 
 
     raw_data_paths = [f"{args.data_dir}{num}.csv" for num in dataset_numbers]
-    incomplete_data_paths = [f"{args.data_dir}{num}.csv" for num in incomplete]
 
     np.random.seed(args.random_seed)
     random.seed(args.random_seed)
@@ -596,11 +595,17 @@ if __name__ == "__main__":
     train_data, val_data, test_data = partition_across_subjects(raw_data_paths, args)
     
     if ADD_NOISY_DATA:
-        noise_train_data, noise_val_data, noise_test_data = partition_across_sensors(incomplete_data_paths, args)
+        no_ankle_data_paths = [f"{args.data_dir}{num}.csv" for num in no_ankle]
+        noise_train_data, noise_val_data, noise_test_data = partition_across_subjects(no_ankle_data_paths, args)
         
         train_data = train_data.combine_with(noise_train_data)
         val_data = val_data.combine_with(noise_val_data)
         test_data = test_data.combine_with(noise_test_data)
+        no_jogging_data_paths = [f"{args.data_dir}{num}.csv" for num in dont_have_jogging]
+        # noise_train_data, noise_val_data, noise_test_data = partition_across_subjects(no_jogging_data_paths, args)
+        # train_data = train_data.combine_with(noise_train_data)
+        # val_data = val_data.combine_with(noise_val_data)
+        # test_data = test_data.combine_with(noise_test_data)
 
     print("X_train shape:", train_data.X.shape)
     print("X_val shape:", val_data.X.shape)

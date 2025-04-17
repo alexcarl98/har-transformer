@@ -64,8 +64,7 @@ class PositionalEncoding(nn.Module):
 class AccelTransformer(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
                  in_seq_dim=3, in_meta_dim=3, nhead=4, 
-                 num_layers=2, dropout=0.1, num_classes=6,
-                 accel_range=(-15, 15)):
+                 num_layers=2, dropout=0.1, num_classes=6):
         super().__init__()
         
         self.normalize = nn.BatchNorm1d(in_seq_dim)
@@ -91,6 +90,7 @@ class AccelTransformer(nn.Module):
 
         # Simplified meta projection to match dimensions
         meta_hidden_dim = 16  # or even smaller, like 8
+
         self.meta_proj = nn.Linear(in_meta_dim, meta_hidden_dim)
         combined_dim = d_model + meta_hidden_dim
 
