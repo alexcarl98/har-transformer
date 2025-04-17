@@ -68,6 +68,7 @@ class AccelTransformer(nn.Module):
         super().__init__()
         
         self.normalize = nn.BatchNorm1d(in_seq_dim)
+        self.meta_normalize = nn.LayerNorm(in_meta_dim)
         self.seq_proj = nn.Sequential(
             nn.Linear(in_seq_dim, d_model//2),
             nn.ReLU(),
@@ -82,11 +83,11 @@ class AccelTransformer(nn.Module):
                                                    nhead=nhead,
                                                    dim_feedforward=128, 
                                                    dropout=dropout)
-                                                #    dropout=dropout,
-                                                #    batch_first=True)
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, 
             num_layers=num_layers)
+                                                #    dropout=dropout,
+                                                #    batch_first=True)
 
         # Simplified meta projection to match dimensions
         meta_hidden_dim = 16  # or even smaller, like 8
@@ -117,12 +118,13 @@ class AccelTransformer(nn.Module):
         x = self.transformer_encoder(x)  # (seq_len, batch, d_model)
         x = x.mean(dim=0)            # (batch, d_model)
 
+        x_meta = self.meta_normalize(x_meta)
         meta = self.meta_proj(x_meta)  # (batch, meta_hidden_dim)
 
         combined = torch.cat([x, meta], dim=1)  # (batch, d_model + meta_hidden_dim)
 
         return self.classifier(combined)  # (batch, num_classes)
-    
+
 
 
 '''
