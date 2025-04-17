@@ -18,6 +18,7 @@ from sklearn.metrics import roc_curve, auc
 import logging
 from utils import TConfig
 import model_version.v0 as v0
+import model_version.v1 as v1
 import yaml
 import wandb
 from datetime import datetime
@@ -618,16 +619,28 @@ if __name__ == "__main__":
 
 
     # === Model, loss, optimizer ===
-    model = v0.AccelTransformer(
-        d_model=args.d_model,
-        fc_hidden_dim=args.fc_hidden_dim,
+    model = v1.AccelTransformerV1(
+        # d_model=args.d_model,
+        # fc_hidden_dim=args.fc_hidden_dim,
         num_classes=args.num_classes,
-        in_seq_dim=args.in_seq_dim,
+        in_channels=args.in_seq_dim,
         in_meta_dim=args.in_meta_dim,
-        nhead=args.nhead,
-        num_layers=args.num_layers,
-        dropout=args.dropout
+        # nhead=args.nhead,
+        # num_layers=args.num_layers,
+        dropout=args.dropout,
+        patch_size=16,
+        stride=4
     ).to(DEVICE)
+    # model = v0.AccelTransformer(
+    #     d_model=args.d_model,
+    #     fc_hidden_dim=args.fc_hidden_dim,
+    #     num_classes=args.num_classes,
+    #     in_seq_dim=args.in_seq_dim,
+    #     in_meta_dim=args.in_meta_dim,
+    #     nhead=args.nhead,
+    #     num_layers=args.num_layers,
+    #     dropout=args.dropout
+    # ).to(DEVICE)
     # model = AccelTransformer(
     #     d_model=args.d_model,
     #     fc_hidden_dim=args.fc_hidden_dim,

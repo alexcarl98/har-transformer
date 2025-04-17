@@ -45,15 +45,29 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=500):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        # position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         # div_term = torch.exp(
         #     torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
         # )
-        div_term = torch.exp(-math.log(10000.0) * torch.arange(0, d_model, 2).float() / d_model)
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)  # shape: (1, max_len, d_model)
-        self.register_buffer("pe", pe)
+        # div_term = torch.exp(-math.log(10000.0) * torch.arange(0, d_model, 2).float() / d_model)
+        # pe[:, 0::2] = torch.sin(position * div_term)
+        # pe[:, 1::2] = torch.cos(position * div_term)
+        # pe = pe.unsqueeze(0)  # shape: (1, max_len, d_model)
+        # self.register_buffer("pe", pe)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        # Handle odd-dimensional input properly
+        pe[:, 0::2] = torch.sin(position * div_term[:d_model//2])
+        if d_model % 2 == 0:
+            pe[:, 1::2] = torch.cos(position * div_term[:d_model//2])
+        else:
+            pe[:, 1::2] = torch.cos(position * div_term[:(d_model-1)//2])
+            pe[:, -1] = torch.sin(position.squeeze(-1) * div_term[-1])
+            
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
 
     def forward(self, x):
         """
@@ -61,6 +75,7 @@ class PositionalEncoding(nn.Module):
         """
         x = x + self.pe[:, :x.size(1), :]
         return x
+    # return x + self.pe[:, :x.size(1)]
 
 
 class RelativePositionalEncoding(nn.Module):
@@ -132,14 +147,19 @@ class AccelTransformer(nn.Module):
         self.normalize = nn.BatchNorm1d(in_seq_dim)
 
         assert d_model % 2 == 0, "d_model must be even"
-        # self.pos_encoder = PositionalEncoding(d_model)
-        # self.pos_encoder = RelativePositionalEncoding(d_model)
-        self.pos_encoder = LearnablePositionalEncoding(d_model)
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, 
-                                                   nhead=nhead,
+        self.pos_encoder = LearnablePositionalEncoding(in_seq_dim)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=in_seq_dim, 
+                                                   nhead=in_seq_dim,
                                                    dim_feedforward=128, 
                                                    dropout=dropout)
+        # self.pos_encoder = PositionalEncoding(d_model)
+        # self.pos_encoder = RelativePositionalEncoding(d_model)
+        # self.pos_encoder = LearnablePositionalEncoding(d_model)
+        # encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, 
+        #                                            nhead=nhead,
+        #                                            dim_feedforward=128, 
+        #                                            dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, 
             num_layers=num_layers)
@@ -314,7 +334,7 @@ class AccelTransformer(nn.Module):
         x = self.normalize(x)            # (batch, 4, seq_len) : normalize across axes
         x = x.transpose(1, 2)            # (batch, seq_len, 4) : transpose axes back
         
-        x = self.seq_proj(x)             # (batch, seq_len, d_model) : project to d_model
+        # x = self.seq_proj(x)             # (batch, seq_len, d_model) : project to d_model
         x = self.pos_encoder(x)          # (batch, seq_len, d_model)
 
         x = x.permute(1, 0, 2)          # (seq_len, batch, d_model) : permute axes, would be unecessary when batch_first=True
