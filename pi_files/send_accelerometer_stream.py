@@ -10,7 +10,7 @@ i2c = busio.I2C(board.SCL, board.SDA)
 mpu = MPU6050(i2c)
 
 # === UDP Setup ===
-UDP_IP = "192.168.86.43"  # Replace with your PC's IP
+UDP_IP = "172.20.10.11"  # Replace with your PC's IP
 UDP_PORT = 5005
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -26,6 +26,7 @@ while True:
         accel = mpu.acceleration  # (x, y, z) in m/s²
         gyro = mpu.gyro           # (x, y, z) in °/s
         payload = struct.pack("ffffff", *accel, *gyro)
+        
         sock.sendto(payload, (UDP_IP, UDP_PORT))
     except Exception as e:
         print("Sensor read error:", e)
