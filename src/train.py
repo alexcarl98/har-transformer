@@ -435,7 +435,9 @@ def get_lr_scheduler(optimizer, warmup_steps, total_steps):
 
 def train_model(args, train_loader, val_data, model, optimizer, criterion, device):
     best_val_f1 = 0.0
-    best_model_state = None
+    best_val_loss = float('inf')
+    best_f1_state = None
+    best_loss_state = None
     patience_counter = 0
     current_epoch = 0
     last_avg_loss = 0.0
@@ -450,9 +452,9 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         best_val_f1 = checkpoint['val_f1']
+        best_val_loss = checkpoint.get('val_loss', float('inf'))
 
     for epoch in range(args.epochs):
-        # Training phase
         current_epoch += 1
         model.train()
         train_loss = 0.0
@@ -465,43 +467,31 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
         print(f'Epoch {current_epoch}/{args.epochs}:')
         print(f"===(Training)===")
         pbar = tqdm(train_loader)
-        # print("Model weights:", model.classifier[0].weight.data.shape)
-        # exit()
+
         for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
             x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
 
-            # Training specific steps
             optimizer.zero_grad()
             outputs = model(x_seq, x_meta)
-            # if batch_idx % 200 == 0:
-            #     print("Model Weights Before:", model.classifier[0].weight.data)
             loss = criterion(outputs, y_true)
             loss.backward()
             optimizer.step()
-            # scheduler.step()
-            # if batch_idx % 200 == 0:
-            #     print("Model Weights After:", model.classifier[0].weight.data)
-            # Consistent prediction handling
+
             pred_classes = torch.argmax(outputs, dim=1)
             predictions.extend(pred_classes.cpu().numpy())
             true.extend(y_true.cpu().numpy())
             
-            # Accumulate batch loss (consistent with eval loop)
             train_loss += loss.item() * x_seq.size(0)
             total += y_true.size(0)
             
-            # Update progress bar
             current_avg_loss = train_loss / ((batch_idx + 1) * x_seq.size(0))
-            # current_lr = scheduler.get_last_lr()[0]
 
             if batch_idx % 10 == 0 or batch_idx == len(train_loader) - 1:
                 current_accuracy = 100. * accuracy_score(true, predictions)
                 pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%")
-                # pbar.set_description(f"Loss: {current_avg_loss:.4f}, Acc: {current_accuracy:.2f}%, Lr: {current_lr:.6f}")
 
         avg_train_loss = train_loss / total
         train_accuracy = 100. * correct / total
-        # exit()
 
         # Validation phase
         print(f"===(Validation)===")
@@ -516,22 +506,30 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
                 "val_f1": f1,
             })
 
-        # Save best model based on F1 score
+        # Save best F1 model
         if f1 > best_val_f1:
             best_val_f1 = f1
-
-            best_model_state = model.state_dict().copy()
+            best_f1_state = model.state_dict().copy()
             patience_counter = 0
-            # Save the model
             save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
-                       avg_train_loss, avg_val_loss, f1, args, 
-                       name="best_accel_transformer")
-            print(f'New best model saved! Validation F1: {f1:.4f}')
+                      avg_train_loss, avg_val_loss, f1, args, 
+                      name="best_f1_accel_transformer")
+            print(f'New best F1 model saved! Validation F1: {f1:.4f}')
+
+        # Save best loss model
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_loss_state = model.state_dict().copy()
+            save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
+                      avg_train_loss, avg_val_loss, f1, args, 
+                      name="best_loss_accel_transformer")
+            print(f'New best loss model saved! Validation Loss: {avg_val_loss:.4f}')
         else:
             patience_counter += 1
         
         last_avg_loss = avg_val_loss
         last_f1 = f1
+
         # Early stopping check
         if patience_counter >= args.patience:
             print(f'Early stopping triggered after {current_epoch} epochs')
@@ -616,20 +614,22 @@ if __name__ == "__main__":
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size)
-
+    # stats_pp = v1.TorchStatsPipeline(args.extracted_features, args.in_seq_dim)
+    stats_pp = None
 
     # === Model, loss, optimizer ===
     model = v1.AccelTransformerV1(
-        # d_model=args.d_model,
-        # fc_hidden_dim=args.fc_hidden_dim,
+        d_model=args.d_model,
+        fc_hidden_dim=args.fc_hidden_dim,
         num_classes=args.num_classes,
         in_channels=args.in_seq_dim,
         in_meta_dim=args.in_meta_dim,
-        # nhead=args.nhead,
+        nhead=args.nhead,
         # num_layers=args.num_layers,
         dropout=args.dropout,
         patch_size=16,
-        stride=4
+        stride=4,
+        torch_stats_pipeline=stats_pp
     ).to(DEVICE)
     # model = v0.AccelTransformer(
     #     d_model=args.d_model,
@@ -672,13 +672,23 @@ if __name__ == "__main__":
                                             name=f"last_model_ep{checkpoint['epoch']}", 
                                             verbose=True, graph_path=args.figure_out_dir)
 
-    print("testing best model:")
-    checkpoint = torch.load(f"{args.weights_out_dir}/best_accel_transformer.pth")
+    print("testing f1 best model:")
+    checkpoint = torch.load(f"{args.weights_out_dir}/best_f1_accel_transformer.pth")
 
     model.load_state_dict(checkpoint['model_state_dict'])
     print(f"===(Testing)===")
     best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, 
-                                                        name=f"best_model_ep{checkpoint['epoch']}", 
+                                                        name=f"best_f1_model_ep{checkpoint['epoch']}", 
+                                                        verbose=True, graph_path=args.figure_out_dir)
+    
+    
+    print("testing f1 best model:")
+    checkpoint = torch.load(f"{args.weights_out_dir}/best_loss_accel_transformer.pth")
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    print(f"===(Testing)===")
+    best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, 
+                                                        name=f"best_loss_model_ep{checkpoint['epoch']}", 
                                                         verbose=True, graph_path=args.figure_out_dir)
 
     if not DEBUG_MODE:

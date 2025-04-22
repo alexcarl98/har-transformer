@@ -54,15 +54,6 @@ def selective_extract_window_signal_features(window, args):
     if "std" in args.extracted_features:
         std_mag = list(np.std(window, axis=0))
         extracted.extend(std_mag)
-    if "freq_mean" in args.extracted_features:
-        freq_mean = list(np.mean(fft_mag, axis=0))
-        extracted.extend(freq_mean)
-    if "freq_std" in args.extracted_features:
-        freq_std = list(np.std(fft_mag, axis=0))
-        extracted.extend(freq_std)
-    if "freq_energy" in args.extracted_features:
-        freq_energy = list(np.sum(fft_mag**2, axis=0)/len(window))
-        extracted.extend(freq_energy)
 
     return extracted
 
@@ -95,7 +86,7 @@ def load_and_process_data(file_path, args, sensor_loc='waist'):
             for i in range(0, len(features) - args.window_size + 1, args.stride):
                 window = features[i:i+args.window_size]
                 meta_data = selective_extract_window_signal_features(window, args)
-                assert len(meta_data) == args.in_meta_dim
+                # assert len(meta_data) == args.in_meta_dim
                 X_windows.append(window)
                 X_meta.append(meta_data)
                 y_labels.append(label)

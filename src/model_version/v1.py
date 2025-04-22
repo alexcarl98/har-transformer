@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import math
-
+from typing import Union, Dict
 class HARWindowDataset(torch.utils.data.Dataset):
     def __init__(self, X, X_meta, y):
         self.X = torch.tensor(X, dtype=torch.float32)
@@ -37,6 +37,100 @@ class HARWindowDataset(torch.utils.data.Dataset):
         return first
 
 
+class TorchStatsPipeline(nn.Module):
+    def __init__(self, attributes: list[str], n_features: int):
+        super(TorchStatsPipeline, self).__init__()
+        # self.config = config
+        self.n_features = n_features
+        self.stats_dim = len(attributes)
+        self.stats_dim += 1 if "skewness" in attributes else 0
+        self.stats_dim += 1 if "kurt" in attributes else 0
+        self.stats_dim *= self.n_features
+
+        self.pipeline = self.create_pipeline(attributes)
+        # Add normalization for both raw and statistical features
+        self.stats_norm = nn.LayerNorm(self.get_feature_dim())
+        
+    def get_feature_dim(self):
+        """Calculate total feature dimension"""
+        return self.stats_dim
+
+    def create_pipeline(self, attributes: list[str]):
+        pipeline = []
+        for attr in attributes:
+            if attr == 'mean':
+                pipeline.append(('mean', lambda x, d=1: x.mean(dim=d)))
+            elif attr == 'std':
+                pipeline.append(('std', lambda x, d=1: x.std(dim=d)))
+            elif attr == 'max':
+                pipeline.append(('max', lambda x, d=1: x.max(dim=d).values))
+            elif attr == 'min':
+                pipeline.append(('min', lambda x, d=1: x.min(dim=d).values))
+            elif attr == 'range':
+                pipeline.append(('range', lambda x, d=1: x.max(dim=d).values - x.min(dim=d).values))
+            elif attr == 'median':
+                pipeline.append(('median', lambda x, d=1: x.median(dim=d).values))
+            elif attr == 'skewness':
+                def skewness(x, d=1):
+                    mean = x.mean(dim=d, keepdim=True)
+                    std = x.std(dim=d, keepdim=True)
+                    skew = ((x - mean) ** 3).mean(dim=d) / (std ** 3)
+                    return skew  # Will return (batch_size, 3) for x,y,z axes
+                pipeline.append(('skewness', skewness))
+            elif attr == 'kurt':
+                def kurtosis(x, d=1):
+                    mean = x.mean(dim=d, keepdim=True)
+                    std = x.std(dim=d, keepdim=True)
+                    kurt = ((x - mean) ** 4).mean(dim=d) / (std ** 4)
+                    return kurt  # Will return (batch_size, 3) for x,y,z axes
+                pipeline.append(('kurtosis', kurtosis))
+            elif attr == 'q75':
+                pipeline.append(('q75', lambda x, d=1: torch.quantile(x, 0.75, dim=d)))
+            elif attr == 'q25':
+                pipeline.append(('q25', lambda x, d=1: torch.quantile(x, 0.25, dim=d)))
+            elif attr == 'iqr':
+                pipeline.append(('iqr', lambda x, d=1: torch.quantile(x, 0.75, dim=d) - 
+                                                     torch.quantile(x, 0.25, dim=d)))
+            elif attr == 'mad':
+                pipeline.append(('mad', lambda x, d=1: (x - x.mean(dim=d, keepdim=True)).abs().mean(dim=d)))
+            elif attr == 'zero_crossing':
+                def zero_crossing(x, d=1):
+                    signs = x.sign()
+                    sign_changes = signs[:, 1:] * signs[:, :-1]
+                    crossings = (sign_changes == -1.0).sum(dim=1)
+                    return crossings
+                pipeline.append(('zero_crossing', zero_crossing))
+        return pipeline
+
+    def forward(self, x: torch.Tensor, return_dict: bool = False) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Apply all statistical features to the input tensor
+        
+        Args:
+            x: Input tensor of shape (batch_size, sequence_length, features)
+            return_dict: If True, returns dictionary of features
+            
+        Returns:
+            If return_dict: Dictionary of statistical features
+            Else: Tensor of shape (batch_size, num_statistical_features)
+        """
+        # Calculate statistical features
+        features = {}
+        for name, func in self.pipeline:
+            feat = func(x)
+            if len(feat.shape) > 2:
+                feat = feat.reshape(feat.shape[0], -1)
+            features[name] = feat
+            
+        if return_dict:
+            return features
+            
+        # Concatenate and normalize statistical features
+        stats_features = torch.cat(list(features.values()), dim=-1)
+        stats_features = self.stats_norm(stats_features)
+            
+        return stats_features
+
 class SensorPatches(nn.Module):
     def __init__(self, in_channels, projection_dim, patch_size, stride):
         super().__init__()
@@ -69,7 +163,7 @@ class AccelTransformerV1(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
                  in_channels=3, in_meta_dim=3, nhead=4, 
                  num_layers=2, dropout=0.1, num_classes=6,
-                 patch_size=16, stride=8):
+                 patch_size=16, stride=8, torch_stats_pipeline: TorchStatsPipeline = None):
         super().__init__()
         
         # Calculate expected sequence length after convolution
@@ -96,7 +190,7 @@ class AccelTransformerV1(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
-            dim_feedforward=d_model * 4,
+            dim_feedforward=d_model * 3,
             dropout=dropout,
             batch_first=True
         )
@@ -106,8 +200,24 @@ class AccelTransformerV1(nn.Module):
         )
         
         # Metadata projection
-        # self.meta_proj = nn.Linear(in_meta_dim, d_model)
-        
+        if torch_stats_pipeline is not None:
+            self.stats = torch_stats_pipeline
+            stats_dim= self.stats.get_feature_dim()
+            d_model += 6*stats_dim
+
+            # self.meta_proj = 
+            
+            # nn.Linear(self.stats.get_feature_dim(), 3*self.stats.get_feature_dim())
+            self.meta_proj = nn.Sequential(
+                nn.Linear(self.stats.get_feature_dim(), 3*self.stats.get_feature_dim()),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(3*self.stats.get_feature_dim(), 6*self.stats.get_feature_dim())
+            )
+            
+            # nn.Linear(self.stats.get_feature_dim(), 3*self.stats.get_feature_dim())
+        else:
+            self.stats = None
         # Final classifier
         self.classifier = nn.Sequential(
             nn.Linear(d_model, fc_hidden_dim),  # *2 for meta concat
@@ -141,6 +251,10 @@ class AccelTransformerV1(nn.Module):
         x = x[:, 0]
         
         # Process metadata
+        if self.stats is not None:
+            x_stats = self.stats(x_seq)
+            x_stats = self.meta_proj(x_stats)
+            x = torch.cat((x, x_stats), dim=1)
         # meta = self.meta_proj(x_meta)
         
         # Combine and classify

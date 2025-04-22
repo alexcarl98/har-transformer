@@ -67,16 +67,22 @@ class PositionalEncoding(nn.Module):
 
 
 class TorchStatsPipeline(nn.Module):
-    def __init__(self, config: DataConfig):
+    def __init__(self, attributes: List[str], n_features: int):
         super(TorchStatsPipeline, self).__init__()
-        self.config = config
-        self.pipeline = self.create_pipeline(config.extracted_features)
+        # self.config = config
+        self.n_features = n_features
+        self.stats_dim = len(attributes)
+        self.stats_dim += 1 if "skewness" in attributes else 0
+        self.stats_dim += 1 if "kurt" in attributes else 0
+        self.stats_dim *= self.n_features
+
+        self.pipeline = self.create_pipeline(attributes)
         # Add normalization for both raw and statistical features
         self.stats_norm = nn.LayerNorm(self.get_feature_dim())
         
     def get_feature_dim(self):
         """Calculate total feature dimension"""
-        return self.config.stats_dim
+        return self.stats_dim
 
     def create_pipeline(self, attributes: List[str]):
         pipeline = []
@@ -160,7 +166,7 @@ class HybridTransformer(nn.Module):
         feature_dim, stats_dim = args.n_features, args.stats_dim
         self.raw_norm = nn.LayerNorm(feature_dim)
         self.pos_encoder = PositionalEncoding(feature_dim)
-        self.stats_pipeline = TorchStatsPipeline(args)
+        self.stats_pipeline = TorchStatsPipeline(args.extracted_features, args.n_features)
         # Process raw sequence
         self.seq_transformer = nn.TransformerEncoderLayer(
             d_model=feature_dim,
