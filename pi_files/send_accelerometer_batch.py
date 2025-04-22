@@ -63,7 +63,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Stream MPU6050 sensor data over UDP')
     parser.add_argument('--ip', default='172.20.10.11', help='UDP destination IP')
     parser.add_argument('--port', type=int, default=5005, help='UDP destination port')
-    parser.add_argument('--window', type=int, default=100, help='Number of readings per batch')
+    parser.add_argument('--window', type=int, default=101, help='Number of readings per batch')
     parser.add_argument('--hz', type=int, default=100, help='Target sampling rate in Hz')
     
     args = parser.parse_args()
