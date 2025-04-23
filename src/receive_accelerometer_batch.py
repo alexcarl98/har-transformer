@@ -9,7 +9,7 @@ from ahrs.common.orientation import acc2q
 
 # Global sensor data queue - now holds 3 batches of 101 readings
 MAX_BATCHES = 3
-SENSOR_BUFFER: Deque[Tuple[float, ...]] = deque(maxlen=303)  # 3 * 101 readings
+SENSOR_BUFFER: Deque[Tuple[float, ...]] = deque(maxlen=502)  # 3 * 251 readings
 
 class BatchStats(NamedTuple):
     accel_mean: np.ndarray
