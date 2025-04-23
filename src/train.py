@@ -23,7 +23,8 @@ import yaml
 import wandb
 from datetime import datetime
 from torchinfo import summary
-DEBUG_MODE = True
+import os
+DEBUG_MODE = False
 DO_SWEEP = False
 run = None
 
@@ -376,11 +377,6 @@ def partition_across_subjects_v1(data_paths, args):
                 temp = list(y)
                 y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
                 subject_data.append(v1.HARWindowDatasetV1(X, y_encoded))
-                # X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
-                # if X is not None:
-                #     # Convert string labels directly to encoded form - no need for [0] access
-                #     y_encoded = np.array([args.encoder_dict[label] for label in y])
-                #     subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
             except Exception as e:
                 print(f"Error processing {file_path} with {sensor_loc}: {e}")
                 continue
@@ -594,8 +590,20 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
                avg_train_loss, last_avg_loss, last_f1, args, 
                name="last_accel_transformer")
 
+def set_all_seeds(seed):
+    """Set all seeds to make results reproducible"""
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 if __name__ == "__main__":
+    # Set seed before any other operations
+    set_all_seeds(42)
+
     ADD_NOISY_DATA = True
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
@@ -636,13 +644,6 @@ if __name__ == "__main__":
 
     raw_data_paths = [f"{args.data_dir}{num}.csv" for num in dataset_numbers]
 
-    np.random.seed(args.random_seed)
-    random.seed(args.random_seed)
-    torch.manual_seed(args.random_seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(args.random_seed)
-        torch.cuda.manual_seed_all(args.random_seed)
-
     decoder_dict = args.decoder_dict
 
     train_data, val_data, test_data = partition_across_subjects_v1(raw_data_paths, args)
@@ -654,11 +655,17 @@ if __name__ == "__main__":
         train_data = train_data.combine_with(noise_train_data)
         val_data = val_data.combine_with(noise_val_data)
         test_data = test_data.combine_with(noise_test_data)
-        no_jogging_data_paths = [f"{args.data_dir}{num}.csv" for num in dont_have_jogging]
-        # noise_train_data, noise_val_data, noise_test_data = partition_across_subjects(no_jogging_data_paths, args)
-        # train_data = train_data.combine_with(noise_train_data)
-        # val_data = val_data.combine_with(noise_val_data)
-        # test_data = test_data.combine_with(noise_test_data)
+
+    
+    os.makedirs(args.out_data_dir, exist_ok=True)
+
+    # Save datasets
+    print("Saving processed datasets...")
+    torch.save(train_data, f'{args.out_data_dir}train_data.pt')
+    torch.save(val_data, f'{args.out_data_dir}val_data.pt')
+    torch.save(test_data, f'{args.out_data_dir}test_data.pt')
+    print("Datasets saved successfully!")
+
 
     print("X_train shape:", train_data.X.shape)
     print("X_val shape:", val_data.X.shape)
@@ -686,26 +693,7 @@ if __name__ == "__main__":
         window_size=args.window_size,
         torch_stats_pipeline=stats_pp
     ).to(DEVICE)
-    # model = v0.AccelTransformer(
-    #     d_model=args.d_model,
-    #     fc_hidden_dim=args.fc_hidden_dim,
-    #     num_classes=args.num_classes,
-    #     in_seq_dim=args.in_seq_dim,
-    #     in_meta_dim=args.in_meta_dim,
-    #     nhead=args.nhead,
-    #     num_layers=args.num_layers,
-    #     dropout=args.dropout
-    # ).to(DEVICE)
-    # model = AccelTransformer(
-    #     d_model=args.d_model,
-    #     fc_hidden_dim=args.fc_hidden_dim,
-    #     num_classes=args.num_classes,
-    #     in_seq_dim=args.in_seq_dim,
-    #     in_meta_dim=args.in_meta_dim,
-    #     nhead=args.nhead,
-    #     num_layers=args.num_layers,
-    #     dropout=args.dropout
-    # ).to(DEVICE)
+    
     print(model)
 
     optimizer = Adam(model.parameters(),
