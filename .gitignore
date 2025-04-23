@@ -236,3 +236,5 @@ scripts/mgmt.sh
 models/
 processed_data/
 har_data/
+
+pi_files/exp/

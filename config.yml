@@ -61,20 +61,3 @@ transformer:
   num_layers: 2
   dropout: 0.1
   load_model_path: ''
-  # warmup_ratio: 0.08  # percentage of total steps for warmup
-  # min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
-  # batch_size: 32
-  # patience: 10
-  # learning_rate: 0.0016  # want to try 0.006
-  # weight_decay: 0.000
-  # epochs: 25
-  # d_model: 6
-  # fc_hidden_dim: 128
-  # nhead: 6
-  # num_layers: 2
-  # dropout: 0.16
-  # load_model_path: ''
-  # Keep epochs low right now
-
-    # NOTE:
-    # self.head_dim * num_heads == self.embed_dim
