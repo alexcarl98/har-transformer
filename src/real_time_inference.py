@@ -4,7 +4,7 @@ import time
 from queue import Queue
 import model_version.v1 as v1
 from utils import TConfig
-from receive_accelerometer_batch import UDPSensorListener
+from src.exp.receive_accelerometer_batch import UDPSensorListener
 import socket
 
 class RealTimeInference:
