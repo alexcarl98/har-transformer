@@ -6,10 +6,11 @@ from collections import deque
 from typing import Deque, Tuple, NamedTuple
 from ahrs.filters import Madgwick
 from ahrs.common.orientation import acc2q
+import torch
 
 # Global sensor data queue - now holds 3 batches of 101 readings
 MAX_BATCHES = 3
-SENSOR_BUFFER: Deque[Tuple[float, ...]] = deque(maxlen=502)  # 3 * 251 readings
+SENSOR_BUFFER: Deque[Tuple[float, ...]] = deque(maxlen=251)  # 3 * 251 readings
 
 class BatchStats(NamedTuple):
     accel_mean: np.ndarray
@@ -34,9 +35,12 @@ class UDPSensorListener:
         self.sock = None
         
         # Initialize Madgwick filter
-        self.madgwick = Madgwick(sampleperiod=0.01)  # 100 Hz sampling rate
+        self.madgwick = Madgwick(sampleperiod=0.01, beta=0.02)  # 100 Hz sampling rate
         # self.quaternion = np.array([1., 0., 0., 0.])  # Initial quaternion
         self.quaternion = None
+        
+        # Add tensor storage for latest window
+        self.latest_linear_accel_window = None
         
     def _calculate_buffer_size(self):
         """Calculate required buffer size based on window size"""
@@ -60,6 +64,8 @@ class UDPSensorListener:
         readings = np.array(values).reshape(self.window_size, 6)
         accel_data = readings[:, :3]  # Shape: (window_size, 3)
         gyro_data = readings[:, 3:]   # Shape: (window_size, 3)
+        
+
         self.quaternion = np.array(acc2q(accel_data[0]), dtype=np.float64)
         print("Initialized quaternion from first reading.")
         # Calculate means
@@ -70,12 +76,14 @@ class UDPSensorListener:
         linear_accels = []
         for i in range(1, len(readings)):
             # Update orientation using Madgwick filter
-            self.quaternion = self.madgwick.updateIMU(
+            updated_q = self.madgwick.updateIMU(
                 q=self.quaternion,
                 gyr=gyro_data[i], 
                 acc=accel_data[i]
             )
-            
+
+            if updated_q is not None:
+                self.quaternion = updated_q
             # Rotate acceleration to remove gravity
             # Convert quaternion to rotation matrix
             q = self.quaternion
@@ -91,6 +99,15 @@ class UDPSensorListener:
             
         linear_accels = np.array(linear_accels)
         linear_accel_mean = linear_accels.mean(axis=0)
+        
+        # Store the latest window as a PyTorch tensor and save locally
+        self.latest_linear_accel_window = torch.tensor(
+            linear_accels.T,  # Transpose to get (3, window_size-1)
+            dtype=torch.float32
+        )
+        
+        # Save the tensor locally
+        torch.save(self.latest_linear_accel_window, 'real_time_window.pt')
         
         # Add all readings to global buffer
         for reading in readings:
@@ -150,6 +167,10 @@ class UDPSensorListener:
         if self.sock:
             self.sock.close()
             self.sock = None
+
+    def get_latest_window(self):
+        """Return the latest linear acceleration window as a tensor."""
+        return self.latest_linear_accel_window
 
 def main():
     import argparse
