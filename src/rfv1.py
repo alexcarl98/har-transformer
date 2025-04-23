@@ -203,7 +203,13 @@ def main():
 
     # Save the processed data to a pickle file
     print(f"Training:")
-    rf_model = train_rf_with_grid_search(rf_X, rf_y, args)
+    # rf_model = train_rf_with_grid_search(rf_X, rf_y, args)
+    rf_model = RandomForestClassifier(n_estimators=args.n_estimators, 
+                                      random_state=args.random_seed, 
+                                      max_depth=args.max_depth,
+                                      min_samples_split=args.min_samples_split,
+                                      verbose=2)
+    rf_model.fit(rf_X, rf_y)
     print(f"Training complete")
 
     print(f"Testing:")
