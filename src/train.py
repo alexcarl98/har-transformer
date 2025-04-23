@@ -23,8 +23,8 @@ import yaml
 import wandb
 from datetime import datetime
 from torchinfo import summary
-DEBUG_MODE = False
-DO_SWEEP = True
+DEBUG_MODE = True
+DO_SWEEP = False
 run = None
 
 ANSI_CYAN = "\033[96m"
@@ -46,7 +46,7 @@ if not DEBUG_MODE:
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def val_batchX_labels(x_seq, x_meta, y_true, y_pred, decoder_dict, args, current_number, num_samples=9, name=''):
+def val_batchX_labels(x_seq, y_true, y_pred, decoder_dict, args, current_number, num_samples=9, name=''):
     """
     Visualize sample predictions from a batch alongside their signals in a 3x3 grid
     
@@ -185,9 +185,9 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
     
     with torch.no_grad():
         pbar = tqdm(data_loader)
-        for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
-            x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
-            outputs = model(x_seq, x_meta)
+        for batch_idx, (x_seq, y_true) in enumerate(pbar):
+            x_seq, y_true = x_seq.to(DEVICE), y_true.to(DEVICE)
+            outputs = model(x_seq)
             loss = criterion(outputs, y_true)
             
             # Accumulate batch loss
@@ -286,12 +286,12 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
         idxs= [idx_1, idx_2, idx_3]
         counter = 0
         
-        for batch_idx, (x_seq, x_meta, y_true) in enumerate(data_loader):
+        for batch_idx, (x_seq, y_true) in enumerate(data_loader):
             if batch_idx in idxs:
-                x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
-                outputs = model(x_seq, x_meta)
+                x_seq,  y_true = x_seq.to(DEVICE), y_true.to(DEVICE)
+                outputs = model(x_seq)
                 pred_classes = torch.argmax(outputs, dim=1)
-                val_batchX_labels(x_seq, x_meta, y_true, pred_classes, decoder_dict,
+                val_batchX_labels(x_seq, y_true, pred_classes, decoder_dict,
                                   args, counter+1, num_samples=9, name=name)
                 break
         plt.close()
@@ -340,6 +340,60 @@ def partition_across_subjects(data_paths, args):
         # Combine with remaining subjects
         for i in indices[1:]:
             next_subject_data = HARWindowDataset.decouple_combine(all_subjects[i])
+            current_har_subject_data = current_har_subject_data.combine_with(next_subject_data)
+        
+        return current_har_subject_data
+    
+
+    # Split subjects into train/val/test before concatenating
+    n_subjects = len(all_subjects)
+    indices = np.arange(n_subjects)
+    
+    # First split: 60% train, 40% temp
+    train_indices, temp_indices = train_test_split(
+        indices, test_size=args.test_size, random_state=args.random_seed
+    )
+    
+    # Second split: 20% val, 20% test (from the 40% temp)
+    val_indices, test_indices = train_test_split(
+        temp_indices, test_size=0.5, random_state=args.random_seed
+    )
+
+    train_data = alt_format_data(all_subjects, train_indices)
+    val_data = alt_format_data(all_subjects, val_indices)
+    test_data = alt_format_data(all_subjects, test_indices)
+    
+    return train_data, val_data, test_data
+
+def partition_across_subjects_v1(data_paths, args):
+    all_subjects = [] 
+
+    for file_path in tqdm(data_paths):
+        subject_data = []
+        for sensor_loc in args.sensor_loc:
+            try:
+                X, _, y = load_and_process_data(file_path, args, sensor_loc)
+                temp = list(y)
+                y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
+                subject_data.append(v1.HARWindowDatasetV1(X, y_encoded))
+                # X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
+                # if X is not None:
+                #     # Convert string labels directly to encoded form - no need for [0] access
+                #     y_encoded = np.array([args.encoder_dict[label] for label in y])
+                #     subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
+            except Exception as e:
+                print(f"Error processing {file_path} with {sensor_loc}: {e}")
+                continue
+        if subject_data:
+            all_subjects.append(subject_data)
+
+    def alt_format_data(all_subjects, indices):
+        # Start with first subject's data
+        current_har_subject_data = v1.HARWindowDatasetV1.decouple_combine(all_subjects[indices[0]])
+        
+        # Combine with remaining subjects
+        for i in indices[1:]:
+            next_subject_data = v1.HARWindowDatasetV1.decouple_combine(all_subjects[i])
             current_har_subject_data = current_har_subject_data.combine_with(next_subject_data)
         
         return current_har_subject_data
@@ -468,11 +522,11 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
         print(f"===(Training)===")
         pbar = tqdm(train_loader)
 
-        for batch_idx, (x_seq, x_meta, y_true) in enumerate(pbar):
-            x_seq, x_meta, y_true = x_seq.to(DEVICE), x_meta.to(DEVICE), y_true.to(DEVICE)
+        for batch_idx, (x_seq, y_true) in enumerate(pbar):
+            x_seq, y_true = x_seq.to(DEVICE),  y_true.to(DEVICE)
 
             optimizer.zero_grad()
-            outputs = model(x_seq, x_meta)
+            outputs = model(x_seq)
             loss = criterion(outputs, y_true)
             loss.backward()
             optimizer.step()
@@ -591,11 +645,11 @@ if __name__ == "__main__":
 
     decoder_dict = args.decoder_dict
 
-    train_data, val_data, test_data = partition_across_subjects(raw_data_paths, args)
+    train_data, val_data, test_data = partition_across_subjects_v1(raw_data_paths, args)
     
     if ADD_NOISY_DATA:
         no_ankle_data_paths = [f"{args.data_dir}{num}.csv" for num in no_ankle]
-        noise_train_data, noise_val_data, noise_test_data = partition_across_subjects(no_ankle_data_paths, args)
+        noise_train_data, noise_val_data, noise_test_data = partition_across_subjects_v1(no_ankle_data_paths, args)
         
         train_data = train_data.combine_with(noise_train_data)
         val_data = val_data.combine_with(noise_val_data)
@@ -614,8 +668,8 @@ if __name__ == "__main__":
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size)
-    # stats_pp = v1.TorchStatsPipeline(args.extracted_features, args.in_seq_dim)
-    stats_pp = None
+    stats_pp = v1.TorchStatsPipeline(args.extracted_features, args.in_seq_dim)
+    # stats_pp = None
 
     # === Model, loss, optimizer ===
     model = v1.AccelTransformerV1(
@@ -629,6 +683,7 @@ if __name__ == "__main__":
         dropout=args.dropout,
         patch_size=16,
         stride=4,
+        window_size=args.window_size,
         torch_stats_pipeline=stats_pp
     ).to(DEVICE)
     # model = v0.AccelTransformer(

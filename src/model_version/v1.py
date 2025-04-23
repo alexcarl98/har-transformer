@@ -36,6 +36,36 @@ class HARWindowDataset(torch.utils.data.Dataset):
             # print(f"Combined size: {len(first)}")
         return first
 
+class HARWindowDatasetV1(torch.utils.data.Dataset):
+    def __init__(self, X, y):
+        self.X = torch.tensor(X, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]
+
+    def combine_with(self, other):
+        X = torch.cat([self.X, other.X], dim=0)
+        y = torch.cat([self.y, other.y], dim=0)
+        result = HARWindowDatasetV1(X, y)
+        return result
+    
+    @classmethod
+    def decouple_combine(cls, har_list: list['HARWindowDatasetV1']):
+        # print(f"\nDEBUG decouple_combine:")
+        # print(f"Number of sensors to combine: {len(har_list)}")
+        first = har_list[0]
+        # print(f"First sensor dataset size: {len(first)}")
+        
+        for i in range(1, len(har_list)):
+            # print(f"Combining with sensor {i}, size: {len(har_list[i])}")
+            first = first.combine_with(har_list[i])
+            # print(f"Combined size: {len(first)}")
+        return first
+
 
 class TorchStatsPipeline(nn.Module):
     def __init__(self, attributes: list[str], n_features: int):
@@ -163,11 +193,12 @@ class AccelTransformerV1(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
                  in_channels=3, in_meta_dim=3, nhead=4, 
                  num_layers=2, dropout=0.1, num_classes=6,
-                 patch_size=16, stride=8, torch_stats_pipeline: TorchStatsPipeline = None):
+                 patch_size=16, stride=8, window_size=100,
+                 torch_stats_pipeline: TorchStatsPipeline = None):
         super().__init__()
         
         # Calculate expected sequence length after convolution
-        self.max_patches = ((100 - patch_size) // stride) + 1
+        self.max_patches = ((window_size - patch_size) // stride) + 1
         
         # Project input sequences into patches
         self.patch_embedding = SensorPatches(
@@ -203,19 +234,11 @@ class AccelTransformerV1(nn.Module):
         if torch_stats_pipeline is not None:
             self.stats = torch_stats_pipeline
             stats_dim= self.stats.get_feature_dim()
-            d_model += 6*stats_dim
+            d_model += 3*stats_dim
 
-            # self.meta_proj = 
-            
-            # nn.Linear(self.stats.get_feature_dim(), 3*self.stats.get_feature_dim())
-            self.meta_proj = nn.Sequential(
-                nn.Linear(self.stats.get_feature_dim(), 3*self.stats.get_feature_dim()),
-                nn.GELU(),
-                nn.Dropout(dropout),
-                nn.Linear(3*self.stats.get_feature_dim(), 6*self.stats.get_feature_dim())
-            )
-            
-            # nn.Linear(self.stats.get_feature_dim(), 3*self.stats.get_feature_dim())
+            self.meta_proj = nn.Linear(self.stats.get_feature_dim(), 3*self.stats.get_feature_dim())
+            # d_model += 6*stats_dim
+
         else:
             self.stats = None
         # Final classifier
@@ -226,23 +249,19 @@ class AccelTransformerV1(nn.Module):
             nn.Linear(fc_hidden_dim, num_classes)
         )
 
-    def forward(self, x_seq, x_meta):
+    def forward(self, x_seq):
         # Print shapes for debugging
         batch_size = x_seq.size(0)
-        # print(f"Input shape: {x_seq.shape}")
         
         # Create patches
         x = self.patch_embedding(x_seq)
-        # print(f"After patching: {x.shape}")
         
         # Add class token
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
-        # print(f"After adding CLS token: {x.shape}")
         
         # Add position encoding
         x = self.pos_encoder(x)
-        # print(f"After position encoding: {x.shape}")
         
         # Transform
         x = self.transformer_encoder(x)
@@ -255,9 +274,6 @@ class AccelTransformerV1(nn.Module):
             x_stats = self.stats(x_seq)
             x_stats = self.meta_proj(x_stats)
             x = torch.cat((x, x_stats), dim=1)
-        # meta = self.meta_proj(x_meta)
         
         # Combine and classify
-        # combined = torch.cat([x, meta], dim=1)
-        # return self.classifier(combined)
         return self.classifier(x)
