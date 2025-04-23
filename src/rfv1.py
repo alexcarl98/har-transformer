@@ -17,6 +17,9 @@ from model_version.v1 import HARWindowDatasetV1, TorchStatsPipeline
 import os
 from tqdm import tqdm
 import torch
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import make_scorer, accuracy_score, f1_score
+
 
 
 @dataclass
@@ -107,9 +110,70 @@ def process_for_rf(dataset: HARWindowDatasetV1):
     
     return feature_df, pd.Series(y.numpy())
 
+def print_classification_results(y_test, y_pred):
+    """Print classification report and return confusion matrix."""
+    print("\nClassification Report (Raw Data):")
+    print(classification_report(y_test, y_pred))
+    # return confusion_matrix(y_test, y_pred)
 
+
+def train_rf_with_grid_search(X, y, args):
+    """
+    Train Random Forest with GridSearchCV using a minimal approach
+    """
+    # Minimal parameter grid
+    param_grid = {
+        'max_depth': [None, 10, 20],
+        'min_samples_split': [2, 5]
+    }
+    
+    # Initialize base model with minimal settings
+    base_rf = RandomForestClassifier(
+        n_estimators=100,
+        random_state=args.random_seed,
+        verbose=1,
+        n_jobs=1  # Force single core for base estimator
+    )
+    
+    # Initialize GridSearchCV with minimal settings
+    grid_search = GridSearchCV(
+        estimator=base_rf,
+        param_grid=param_grid,
+        scoring='f1_macro',
+        cv=3,
+        verbose=1,
+        n_jobs=1,  # Force single core for grid search
+        error_score='raise'
+    )
+    
+    try:
+        # Fit GridSearchCV
+        print("Starting Grid Search...")
+        grid_search.fit(X, y)
+        
+        print("\nBest parameters found:")
+        print(grid_search.best_params_)
+        print("\nBest cross-validation score:")
+        print(f"F1-macro: {grid_search.best_score_:.4f}")
+        
+        return grid_search.best_estimator_
+        
+    except Exception as e:
+        print(f"Error during grid search: {str(e)}")
+        print("Falling back to default Random Forest...")
+        
+        # Fallback to basic model if grid search fails
+        rf_model = RandomForestClassifier(
+            n_estimators=100,
+            random_state=args.random_seed,
+            verbose=1,
+            n_jobs=1  # Force single core
+        )
+        rf_model.fit(X, y)
+        return rf_model
 
 def main():
+
     args = RFConfig.from_yaml("config.yml")
     print(args)
 
@@ -136,8 +200,17 @@ def main():
     print(f"{test_data.y.shape=}")
 
     rf_X, rf_y = process_for_rf(rf_train_data)
-    print(rf_X.head())
-    print(rf_y.head())
+
+    # Save the processed data to a pickle file
+    print(f"Training:")
+    rf_model = train_rf_with_grid_search(rf_X, rf_y, args)
+    print(f"Training complete")
+
+    print(f"Testing:")
+    rf_X_test, rf_y_test = process_for_rf(test_data)
+    rf_y_pred = rf_model.predict(rf_X_test)
+
+    print_classification_results(rf_y_test, rf_y_pred)
 
 if __name__ == "__main__":
     main()
