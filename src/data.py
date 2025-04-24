@@ -1,13 +1,39 @@
 import yaml
 import os
 from dataclasses import dataclass, asdict
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Literal
 import pandas as pd
 import hashlib
 import json
 import numpy as np
 import pickle
 from sklearn.model_selection import train_test_split
+import torch
+
+class HarDataset(torch.utils.data.Dataset):
+    def __init__(self, X, y):
+        self.X = torch.tensor(X, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]
+
+    def combine_with(self, other):
+        X = torch.cat([self.X, other.X], dim=0)
+        y = torch.cat([self.y, other.y], dim=0)
+        result = HarDataset(X, y)
+        return result
+    
+    @classmethod
+    def decouple_combine(cls, har_list: list['HarDataset']):
+        first = har_list[0]
+        
+        for i in range(1, len(har_list)):
+            first = first.combine_with(har_list[i])
+        return first
 
 @dataclass
 class BiometricsData:
@@ -44,8 +70,6 @@ class BiometricsData:
                 mask &= (self.df[column] == value)
             
         return self.df[mask]['ID'].tolist()
-    
-
     
     def get_subject_data(self, subject_id: int) -> Optional[pd.Series]:
         """Get all biometrics data for a specific subject"""
@@ -222,7 +246,7 @@ class DataConfig:
     raw_dir: str
     processed_dir: str
     dataset_name: str
-    class_balanced_to: str  # "min_samples", "subject", or "None"
+    balance_setting: Literal["min_sample", "subject", "None"]
     window_center_percentage: float
     train_on_sensors: List[str]
     test_on_sensors: List[str]
@@ -235,10 +259,10 @@ class DataConfig:
     
     def __post_init__(self):
         """Validate configuration parameters"""
-        # Validate class_balanced_to
-        valid_balance_options = {"min_samples", "subject", "None"}
-        if self.class_balanced_to not in valid_balance_options:
-            raise ValueError(f"class_balanced_to must be one of {valid_balance_options}")
+        # Validate balance_setting
+        valid_balance_options = {"min_sample", "subject", "None"}
+        if self.balance_setting not in valid_balance_options:
+            raise ValueError(f"balance_setting must be one of {valid_balance_options}")
             
         # Validate sensors
         valid_sensors = {"ankle", "wrist", "waist"}
@@ -279,13 +303,62 @@ class DataConfig:
             
         return cls(**config['data'])
 
+    def csv_info(self):
+        """Return formatted header and row for CSV output."""
+        fields = {
+            'balance_setting': self.balance_setting,
+            'train_on_sensors': '"'+','.join(self.train_on_sensors)+'"',
+            'test_on_sensors': '"'+','.join(self.test_on_sensors)+'"',
+            'classes': '"'+','.join(self.classes)+'"',
+            'test_size': self.test_size,
+            'val_size': self.val_size,
+            'window_size': self.window_size,
+            'stride': self.stride,
+            'ft_col': '"'+','.join(self.ft_col)+'"'
+        }
+        
+        # Create header and row without self. references
+        header = ','.join(fields.keys())
+        row = ','.join(str(value) for value in fields.values())
+        return header, row
+    
+    @property
+    def in_seq_dim(self):
+        return len(self.ft_col)
+
+    @property
+    def num_classes(self):
+        return len(self.classes)
 
 
-class DataLoader:
-    def __init__(self, data_config: DataConfig, subject_partitions: List[List[str]]):
+
+def obtain_standard_partitions(bio_data: BiometricsData, activity_list: List[str], yaml_path: str) -> List[List[str]]:
+    with open(yaml_path, 'r') as f:
+        partitions = yaml.safe_load(f)
+
+    ignore = ["cross_set_configs", 'data']
+    parts = {}
+
+    for key in partitions.keys():
+        if key in ignore:
+            continue
+        parts[key] = SubjectPartition.from_yaml(
+            yaml_path=yaml_path,
+            partition_name=key
+        ).get_subjects_str(bio_data)
+
+    all_subjects = list(set([subject for partition in parts.values() for subject in partition]))
+    _,_, min_sample_count = bio_data.get_abs_min_sample_window(all_subjects, activity_list)
+    
+    return parts, min_sample_count
+
+
+class GeneralDataLoader:
+    def __init__(self, data_config: DataConfig, bio_data: BiometricsData, subject_partitions: Dict[str, List[str]], min_sample_count: int = None):
         self.data_config = data_config
-        self.subject_partitions = subject_partitions
-        self.bio_data = BiometricsData.from_csv()
+        self.parts = subject_partitions
+        self.subject_partitions = list(subject_partitions.values())
+        self.bio_data = bio_data
         self.encoder_dict = {label: idx for idx, label in enumerate(self.data_config.classes)}
         self.decoder_dict = {idx: label for idx, label in enumerate(self.data_config.classes)}
         self.num_classes = len(self.data_config.classes)
@@ -298,6 +371,11 @@ class DataLoader:
         if self.data_config.processed_dir is not None:
             os.makedirs(self.data_config.processed_dir, exist_ok=True)
 
+        if self.data_config.balance_setting == "min_sample" and min_sample_count is not None:
+            self.min_sample_count = min_sample_count
+        else:
+            self.min_sample_count = None
+
         self.data_save_path = os.path.join(self.data_config.processed_dir, f"data-{self.hash_value}.pkl")
         if os.path.exists(self.data_save_path):
             self.data = pickle.load(open(self.data_save_path, 'rb'))
@@ -309,7 +387,6 @@ class DataLoader:
                               sensor_locs: List[str]) -> tuple[List[np.ndarray], List[int]]:
         """Process features and labels for a single subject."""
         X, y = [], []
-        # print(f"{subject_id=}")
         file_path = os.path.join(self.data_config.raw_dir, f"{subject_id}.csv")
         feature_cols = [f'{sensor_loc}_{ft}' for ft in self.data_config.ft_col 
                        for sensor_loc in sensor_locs]
@@ -342,14 +419,12 @@ class DataLoader:
         window_args = {
             'activities': self.data_config.classes,
             'wp': self.data_config.window_center_percentage,
-            'balance': self.data_config.class_balanced_to in ["subject", "min_samples"]
+            'balance': self.data_config.balance_setting in ["subject", "min_sample"]
         }
         
         # Handle different balancing strategies
-        if self.data_config.class_balanced_to == "min_samples":
-            min_subject, min_activity, count = self.bio_data.get_abs_min_sample_window(
-                partition, self.data_config.classes)
-            window_args['min_count_override'] = count
+        if self.data_config.balance_setting == "min_sample":
+            window_args['min_count_override'] = self.min_sample_count
         
         # Process each subject
         X_all, y_all = [], []
@@ -365,6 +440,35 @@ class DataLoader:
                     print(f"{e=}")
 
         return np.array(X_all), np.array(y_all)
+    
+    @classmethod
+    def from_yaml(cls, yaml_path: str) -> 'GeneralDataLoader':
+        
+        data_config = DataConfig.from_yaml(yaml_path)
+        bio_path = os.path.join(data_config.raw_dir, '000_biometrics.csv')
+        bio_data = BiometricsData.from_csv(bio_path)
+        parts, min_sample_count = obtain_standard_partitions(bio_data, data_config.classes, yaml_path)
+        
+        return cls(data_config, bio_data, parts, min_sample_count)
+
+    def write_to_csv(self):
+        """Write configuration information to CSV file."""
+        file_path = os.path.join(self.data_config.processed_dir, "overview.csv")
+        config_header, config_row = self.data_config.csv_info()
+        num_partitions = len(self.subject_partitions)
+        num_subjects = sum(len(partition) for partition in self.subject_partitions)
+        
+        # Combine all fields
+        full_header = f"hash_value,{config_header},num_partitions,num_subjects"
+        full_row = f"{self.hash_value},{config_row},{num_partitions},{num_subjects}"
+        
+        if not os.path.exists(file_path):
+            with open(file_path, 'w') as f:
+                f.write(f"{full_header}\n")
+                f.write(f"{full_row}\n")
+        else:
+            with open(file_path, 'a') as f:
+                f.write(f"{full_row}\n")
 
     def process_partitions(self) -> tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Process all partitions and split into train/val/test sets."""
@@ -395,69 +499,40 @@ class DataLoader:
             for split_name, (split_indices, sensors) in splits.items():
                 split_partition = [partition[i] for i in split_indices]
                 X, y = self.process_partition(split_partition, sensors)
-                # print(f"{split_name=}")
-                # print(f"{split_partition=}")
-                # print(f"{X.shape=}")
-                # print(f"{y.shape=}")
                 datasets[f'{split_name}_X'].append(X)
                 datasets[f'{split_name}_y'].append(y)
         
+
+        self.write_to_csv()
         # Concatenate all partitions
         return {
             'train': (np.concatenate(datasets['train_X']), np.concatenate(datasets['train_y'])),
             'val': (np.concatenate(datasets['val_X']), np.concatenate(datasets['val_y'])),
             'test': (np.concatenate(datasets['test_X']), np.concatenate(datasets['test_y']))
         }
+    
+    def get_Xy(self, split: Literal['train', 'val', 'test']) -> tuple[np.ndarray, np.ndarray]:
+        X, y = self.data[split]
+        return X, y
+    
+    def get_har_dataset(self, split: Literal['train', 'val', 'test']) -> HarDataset:
+        X, y = self.get_Xy(split)
+        return HarDataset(X, y)
+    
+
+
 
 # Example usage:
 if __name__ == "__main__":
-    bio_data = BiometricsData.from_csv()
+    data_loader = GeneralDataLoader.from_yaml('cfg_data.yml')
 
-    complete_data = SubjectPartition.from_yaml(
-        yaml_path='partitions.yml',
-        partition_name='complete_data'
-    ).get_subjects_str(bio_data)
+    X, y = data_loader.get_Xy('train')
+    print(f"{X.shape=}")
+    print(f"{y.shape=}")
+    print(f"{y=}")
 
-    print(f"{complete_data=}")
-    # Get subjects missing ankle sensor (for testing sensor invariance)
-    no_ankle = SubjectPartition.from_yaml(
-        yaml_path='partitions.yml',
-        partition_name='no_ankle_sensor'
-    ).get_subjects_str(bio_data)
-    print(f"{no_ankle=}")
-    
-    # Get subjects without jogging data
-    no_jogging = SubjectPartition.from_yaml(
-        yaml_path='partitions.yml',
-        partition_name='no_jogging_activity'
-    ).get_subjects_str(bio_data)
-    print(f"{no_jogging=}")
-
-    subject_partitions = [complete_data, no_jogging, no_ankle]
-
-    def get_windows(subject_id, classes, wp, balance_setting):
-        if balance_setting == "min_samples":
-            min_subject, min_activity, count = bio_data.get_abs_min_sample_window(subject_id, classes)
-            return bio_data.get_subject_windows(subject_id, classes, wp=wp, min_count_override=count)
-        elif balance_setting == "subject":
-            return bio_data.get_subject_windows(subject_id, classes, wp=wp, balance=True)
-        else:
-            return bio_data.get_subject_windows(subject_id, classes, wp=wp, balance=False)
-
-    data_config = DataConfig.from_yaml('partitions.yml')
-
-    data_loader = DataLoader(data_config, subject_partitions)
-
-    # data = data_loader.process_partitions()
-    # print(f"{data=}")
-
-
-
-    # # Access configuration
-    # print(f"Training on sensors: {data_config.train_on_sensors}")
-    # print(f"Testing on sensors: {data_config.test_on_sensors}")
-    # print(f"Classes: {data_config.classes}")
-    # print(f"Hash value: {data_loader.hash_value}")
-
-    # activities = ['jog_treadmill', 'walk_treadmill', 'walk_mixed']
-    
+    # har_dataset = data_loader.get_har_dataset('train')
+    # print(f"{har_dataset=}")
+    # print(f"{har_dataset.X.shape=}")
+    # print(f"{har_dataset.y.shape=}")
+    # print(f"{har_dataset.y=}")

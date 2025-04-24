@@ -9,15 +9,15 @@ import torch
 from datetime import datetime
 
 # "downstairs", "jog_treadmill", "upstairs", "walk_mixed", "walk_sidewalk", "walk_treadmill"
-@dataclass
-class DataConfig:
-    data_dir: str = "raw_data/"
-    middle_percentage: float = 0.85
-    encoding_method: Literal["one_hot", "label_encoding"] = "one_hot"
-    sensor_loc: List[str] = field(default_factory=lambda: ["waist", "ankle", "wrist"])
-    ft_col: List[str] = field(default_factory=lambda: ["x", "y", "z"])
-    window_size: int = 100
-    stride: int = 10
+# @dataclass
+# class DataConfig:
+#     data_dir: str = "raw_data/"
+#     middle_percentage: float = 0.85
+#     encoding_method: Literal["one_hot", "label_encoding"] = "one_hot"
+#     sensor_loc: List[str] = field(default_factory=lambda: ["waist", "ankle", "wrist"])
+#     ft_col: List[str] = field(default_factory=lambda: ["x", "y", "z"])
+#     window_size: int = 100
+#     stride: int = 10
 
 
 @dataclass

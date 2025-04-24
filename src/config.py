@@ -5,10 +5,12 @@ import os
 from datetime import datetime
 import hashlib
 import json
+from data import DataConfig
 
 
 @dataclass
 class RFConfig:
+    extracted_features: List[str] = field(default_factory=lambda: ["mean", "std"])
     n_estimators: int = 100
     max_depth: int = 10
     min_samples_split: int = 2
@@ -45,7 +47,21 @@ class OutputPathsConfig:
     run_id: str = None
     
     def __post_init__(self):
-        # Generate unique run ID if not provided
+        if not os.path.exists(self.base_path):
+            os.makedirs(self.base_path)
+        else:
+            # Clean up empty directories
+            for root, dirs, files in os.walk(self.base_path, topdown=False):
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    try:
+                        # Check if directory is empty (no files and no non-empty subdirectories)
+                        if not os.listdir(dir_path):
+                            os.rmdir(dir_path)
+                    except OSError:
+                        # Skip if directory can't be removed (e.g., permission issues or not empty)
+                        continue
+        
         if not self.run_id:
             self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -79,7 +95,6 @@ class Config:
     models_tested: List[str]
     evaluation_metrics: List[str]
     wandb: WandBConfig
-    data: DataConfig
     random_forest: Optional[RFConfig] = None
     transformer: Optional[TConfig] = None
 
@@ -88,18 +103,22 @@ class Config:
         with open(yaml_path, 'r') as f:
             config_dict = yaml.safe_load(f)
         
+        # TODO:put the loading code from `data.py` into here.
+
         # Create output paths configuration
-        output_paths = OutputPathsConfig(base_path=config_dict['path'], data_settings=config_dict['data_settings'])
+        output_paths = OutputPathsConfig(base_path=config_dict['base_output_dir'], data_settings=config_dict['data_settings'])
+
+
         
         # Rest of the configuration loading...
         wandb_config = WandBConfig(**config_dict['wandb'])
-        data_config = DataConfig(**config_dict['data'])
+        # data_config = DataConfig(**config_dict['data'])
         
         model_configs = {}
         
         if 'transformer' in config_dict['models_tested']:
             model_configs['transformer'] = TConfig(**config_dict['transformer'])
-        
+
         if 'random_forest' in config_dict['models_tested']:
             model_configs['random_forest'] = RFConfig(**config_dict['random_forest'])
         
@@ -108,7 +127,7 @@ class Config:
             models_tested=config_dict['models_tested'],
             evaluation_metrics=config_dict['evaluation_metrics'],
             wandb=wandb_config,
-            data=data_config,
+            # data=data_config,
             **model_configs
         )
     
@@ -121,3 +140,18 @@ class Config:
             'n_epochs': self.data.epochs,
             'learning_rate': self.transformer.learning_rate,
         }
+    
+    def get_data_config_path(self):
+        return self.output_paths.data_settings
+    
+
+    
+
+
+if __name__ == "__main__":
+    import data
+
+    config = Config.from_yaml('new_config.yml')
+    print(config.get_data_config_path())
+    data_loader = data.GeneralDataLoader.from_yaml(config.get_data_config_path())
+    X, y = data_loader.get_Xy('train')
