@@ -6,16 +6,24 @@ import seaborn as sns
 # This is where all the data is stored online
 URL_BASE = "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data"
 
-all_subjects = ['001', '002', '004', '008','010','011','012',
-                   '013','015','016','017', '018', '019', '020',
-                   '021','022','024','025', '026','027', '028','029',
-                   '030', '031', '032', '033', '035', '036', '037', 
-                   '038', '039', '040', '041']
+# all_subjects = ['001', '002', '004', '008','010','011','012',
+#                    '013','015','016','017', '018', '019', '020',
+#                    '021','022','024','025', '026','027', '028','029',
+#                    '030', '031', '032', '033', '034', '035', '036', '037', 
+#                    '038', '039', '040', '041']
+all_subjects = ['002']
+                #    '013','015','016','017', '018', '019', '020',
+                #    '021','022','024','025', '026','027', '028','029',
+                #    '030', '031', '032', '033', '034', '035', '036', '037', 
+                #    '038', '039', '040', '041']
 all_subjects_int = [int(subject) for subject in all_subjects]
 data_dir = "har_data/"
 label = "activity"
 sensor_loc = ["waist", "ankle", "wrist"]
 classes = ["upstairs", "downstairs","jog_treadmill", "walk_treadmill", "walk_mixed", "walk_sidewalk"]
+
+valid_columns= ['time','wrist_x','wrist_y','wrist_z','wrist_vm','ankle_x','ankle_y','ankle_z','ankle_vm','waist_x','waist_y','waist_z','waist_vm','person','activity']
+
 
 # This is the biometrics file that contains the information about the subjects
 biometrics = pd.read_csv("https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/biometrics/biometrics.csv")
@@ -29,6 +37,11 @@ if not os.path.exists(data_dir):
 for dataset_num in all_subjects:
     try:
         df = pd.read_csv(f"{URL_BASE}/{dataset_num}_labeled.csv")
+
+        for col in valid_columns:
+            if col not in df.columns:
+                print(f"Warning: Column '{col}' missing from dataset {dataset_num}")
+        
         y = df[label]
 
         # Create a DataFrame with both counts and percentages
@@ -75,6 +88,8 @@ for dataset_num in all_subjects:
         df.to_csv(f'{data_dir}{dataset_num}.csv', index=False)
     except Exception as e:
         continue
+
+exit()
 
 biometrics.to_csv(f'{data_dir}000_biometrics.csv', index=False)
 
