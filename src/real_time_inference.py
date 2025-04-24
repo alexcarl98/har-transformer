@@ -3,23 +3,27 @@ import torch
 import time
 from queue import Queue
 import model_version.v1 as v1
-from utils import TConfig
-from src.exp.receive_accelerometer_batch import UDPSensorListener
+from config import Config
+from data import DataConfig
+from receive_accelerometer_batch import UDPSensorListener
 import socket
 
 class RealTimeInference:
     def __init__(self, model_path, config_path='config.yml'):
         # Initialize device and load config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.args = TConfig.from_yaml(config_path)
+        self.config = Config.from_yaml(config_path)
+        self.data_config = DataConfig.from_yaml(self.config.get_data_config_path())
+        
+        self.args = self.config.transformer
         
         # Initialize model
-        self.stats_pp = v1.TorchStatsPipeline(self.args.extracted_features, self.args.in_seq_dim)
+        self.stats_pp = v1.TorchStatsPipeline(self.args.extracted_features, self.data_config.in_seq_dim)
         self.model = self.load_model(model_path)
         self.model.eval()  # Set to evaluation mode
         
         # Initialize sensor listener
-        self.sensor_listener = UDPSensorListener(window_size=101)
+        self.sensor_listener = UDPSensorListener(window_size=self.data_config.window_size+1)
         
         # Thread control
         self.running = False
@@ -29,14 +33,14 @@ class RealTimeInference:
         model = v1.AccelTransformerV1(
             d_model=self.args.d_model,
             fc_hidden_dim=self.args.fc_hidden_dim,
-            num_classes=self.args.num_classes,
-            in_channels=self.args.in_seq_dim,
-            in_meta_dim=self.args.in_meta_dim,
+            num_classes=self.data_config.num_classes,
+            in_channels=self.data_config.in_seq_dim,
+            # in_meta_dim=self.data_config.in_meta_dim,
             nhead=self.args.nhead,
             dropout=self.args.dropout,
             patch_size=16,
             stride=4,
-            window_size=self.args.window_size,
+            window_size=self.data_config.window_size,
             torch_stats_pipeline=self.stats_pp
         ).to(self.device)
         
@@ -123,7 +127,7 @@ class RealTimeInference:
         print("System stopped.")
 
 def main():
-    model_path = '/home/alexa/Documents/har-transformer/models/run_20250422_210242/weights/best_f1_accel_transformer.pth'
+    model_path = '/home/alexa/Documents/har-transformer/outputs/run_20250424_133126/models/best_f1_accel_transformer.pth'
     real_time_system = RealTimeInference(model_path)
     real_time_system.start()
 

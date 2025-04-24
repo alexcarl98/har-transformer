@@ -1,20 +1,31 @@
-model: &base_model
-  data_dir: "raw_data/"
-  out_data_dir: "processed_data/"
-  output_dir: "doc/latex/figure/"
-  model_out_dir: "models/"
-  random_seed: 42
-  # ==== Data Processing ====
-  sensor_loc:
-    - "waist"
-    - "ankle"
-    - "wrist"
-  ft_col:
-    - "x"
-    - "y"
-    - "z"
-    # - "vm"
+# which directory to save the trial outputs
+base_output_dir: "outputs"
+data_settings: "cfg_data.yml"
 
+# which models to test in this trial 
+# commenting out models will not test that model
+models_tested:
+  - random_forest
+  - transformer
+
+# which metrics to use in testing our models, 
+# commenting out metrics will not test that metric
+evaluation_metrics:
+  - accuracy
+  - confusion_matrix
+  - classification_report
+  - ROC_AUC
+  - val_batch_examples
+
+wandb:
+  # mode: online, offline, disabled
+  mode: "disabled"
+  entity: "alex-alvarez1903-loyola-marymount-university"
+  project: "Har-Transformer-New"
+  model_versioning: false
+
+
+random_forest:
   extracted_features:
     # - "mean"
     - "std"
@@ -25,39 +36,99 @@ model: &base_model
     # - "iqr"
     - "mad"
     # - "skewness"
-
-  classes:
-    - "downstairs"
-    - "jog_treadmill"
-    - "upstairs"
-    - "walk_treadmill"
-    # - "walk_mixed"
-    # - "walk_sidewalk"
-  window_size: 250
-  stride: 5
-  save_pkl: False
-  test_size: 0.4
-  
-# ==== Model Training ====
-random_forest:
-  <<: *base_model
   n_estimators: 100
   max_depth: 10
   min_samples_split: 2
   min_samples_leaf: 1
 
 transformer:
-  <<: *base_model
-  warmup_ratio: 0.08  # percentage of total steps for warmup
-  min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
+  extracted_features:
+    # - "mean"
+    - "std"
+    # - "max"
+    # - "min"
+    # - "q75"
+    # - "q25"
+    # - "iqr"
+    - "mad"
+    # - "skewness"
+  
+  warmup_ratio: 0.1
+  min_lr_ratio: 0.0
   batch_size: 64
-  patience: 20
+  patience: 15
   learning_rate: 0.0015
-  weight_decay: 0.001
+  weight_decay: 0.0
   epochs: 2
-  d_model: 128
+  d_model: 66
   fc_hidden_dim: 128
-  nhead: 4
+  nhead: 6
   num_layers: 2
   dropout: 0.1
   load_model_path: ''
+
+
+
+# model: &base_model
+#   data_dir: "raw_data/"
+#   out_data_dir: "processed_data/"
+#   output_dir: "doc/latex/figure/"
+#   model_out_dir: "models/"
+#   random_seed: 42
+#   # ==== Data Processing ====
+#   sensor_loc:
+#     - "waist"
+#     - "ankle"
+#     - "wrist"
+#   ft_col:
+#     - "x"
+#     - "y"
+#     - "z"
+#     # - "vm"
+
+#   extracted_features:
+#     # - "mean"
+#     - "std"
+#     # - "max"
+#     # - "min"
+#     # - "q75"
+#     # - "q25"
+#     # - "iqr"
+#     - "mad"
+#     # - "skewness"
+
+#   classes:
+#     - "downstairs"
+#     - "jog_treadmill"
+#     - "upstairs"
+#     - "walk_treadmill"
+#     # - "walk_mixed"
+#     # - "walk_sidewalk"
+#   window_size: 250
+#   stride: 5
+#   save_pkl: False
+#   test_size: 0.4
+  
+# # ==== Model Training ====
+# random_forest:
+#   <<: *base_model
+#   n_estimators: 100
+#   max_depth: 10
+#   min_samples_split: 2
+#   min_samples_leaf: 1
+
+# transformer:
+#   <<: *base_model
+#   warmup_ratio: 0.08  # percentage of total steps for warmup
+#   min_lr_ratio: 0.0  # minimum learning rate as a fraction of initial lr
+#   batch_size: 64
+#   patience: 20
+#   learning_rate: 0.0015
+#   weight_decay: 0.001
+#   epochs: 2
+#   d_model: 128
+#   fc_hidden_dim: 128
+#   nhead: 4
+#   num_layers: 2
+#   dropout: 0.1
+#   load_model_path: ''

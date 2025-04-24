@@ -19,7 +19,8 @@ from tqdm import tqdm
 import torch
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer, accuracy_score, f1_score
-from utils import RFConfig
+from config import Config
+from data import GeneralDataLoader
 
 def process_for_rf(dataset: HARWindowDatasetV1):
     # Keep data on GPU if it's already there, or move it
@@ -139,16 +140,15 @@ def train_rf_with_grid_search(X, y, args):
         return rf_model
 
 def main():
-
-    args = RFConfig.from_yaml("config.yml")
-    print(args)
-
+    config = Config.from_yaml("config.yml")
+    data_loader = GeneralDataLoader.from_yaml(config.get_data_config_path())
+    args = config.random_forest
     try:
         print("Loading preprocessed datasets...")
-        train_data = torch.load(f'{args.out_data_dir}train_data.pt')
-        val_data = torch.load(f'{args.out_data_dir}val_data.pt')
+        train_data = data_loader.get_har_dataset('train')
+        val_data = data_loader.get_har_dataset('val')
         rf_train_data = train_data.combine_with(val_data)
-        test_data = torch.load(f'{args.out_data_dir}test_data.pt')
+        test_data = data_loader.get_har_dataset('test')
         print("Datasets loaded successfully!")
     except FileNotFoundError:
         raise FileNotFoundError("Preprocessed datasets not found. Run `src/train.py` first to generate preprocessed datasets.")
@@ -171,7 +171,7 @@ def main():
     print(f"Training:")
     # rf_model = train_rf_with_grid_search(rf_X, rf_y, args)
     rf_model = RandomForestClassifier(n_estimators=args.n_estimators, 
-                                      random_state=args.random_seed, 
+                                      random_state=42, 
                                       max_depth=args.max_depth,
                                       min_samples_split=args.min_samples_split,
                                       verbose=2)

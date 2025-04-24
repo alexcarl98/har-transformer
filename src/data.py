@@ -9,6 +9,7 @@ import numpy as np
 import pickle
 from sklearn.model_selection import train_test_split
 import torch
+from simple_download import download_data
 
 class HarDataset(torch.utils.data.Dataset):
     def __init__(self, X, y):
@@ -258,6 +259,10 @@ class DataConfig:
     ft_col: List[str]
     
     def __post_init__(self):
+        if not os.path.exists(self.raw_dir):
+            os.makedirs(self.raw_dir)
+            download_data(self.dataset_url, self.raw_dir)
+
         """Validate configuration parameters"""
         # Validate balance_setting
         valid_balance_options = {"min_sample", "subject", "None"}
@@ -378,8 +383,10 @@ class GeneralDataLoader:
 
         self.data_save_path = os.path.join(self.data_config.processed_dir, f"data-{self.hash_value}.pkl")
         if os.path.exists(self.data_save_path):
+            print(f"Loading data from {self.data_save_path}")
             self.data = pickle.load(open(self.data_save_path, 'rb'))
         else:
+            print(f"Processing new data config and saving to {self.data_save_path}")
             self.data = self.process_partitions()
             pickle.dump(self.data, open(self.data_save_path, 'wb'))
 

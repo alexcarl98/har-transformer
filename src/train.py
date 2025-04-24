@@ -8,16 +8,14 @@ from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 import numpy as np
 import random
 from tqdm import tqdm
-from constants import *
+# from constants import *
 from sklearn.metrics import classification_report, accuracy_score
-from preprocessing import load_and_process_data, split_data, encode_labels, load_and_process_data_with_chunks
-from har_model import AccelTransformer, HARWindowDataset
+# from preprocessing import load_and_process_data, split_data, encode_labels, load_and_process_data_with_chunks
+# from har_model import AccelTransformer, HARWindowDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc
 import logging
-from utils import TConfig
-import model_version.v0 as v0
 import model_version.v1 as v1
 import yaml
 import wandb
@@ -37,12 +35,6 @@ ANSI_RED = "\033[91m"
 ANSI_YELLOW = "\033[93m"
 ANSI_MAGENTA = "\033[95m"
 ANSI_RESET = "\033[0m"
-
-# if not DEBUG_MODE:
-#     run = wandb.init(
-#         entity="alex-alvarez1903-loyola-marymount-university",
-#         project="HAR-PosTransformer",
-#     )
 
 
 # ==== Data Processing ====
@@ -314,154 +306,6 @@ def save_model(epoch, model_state, optimizer_state,
         'val_f1': val_f1,
     }, f"{config.output_paths.models_dir}/{name}.pth")
 
-# def partition_across_subjects(data_paths, args):
-#     all_subjects = [] 
-
-#     for file_path in tqdm(data_paths):
-#         subject_data = []
-#         for sensor_loc in args.sensor_loc:
-#             try:
-#                 X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
-#                 temp = list(y)
-#                 y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
-#                 subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
-#                 # X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
-#                 # if X is not None:
-#                 #     # Convert string labels directly to encoded form - no need for [0] access
-#                 #     y_encoded = np.array([args.encoder_dict[label] for label in y])
-#                 #     subject_data.append(HARWindowDataset(X, X_meta, y_encoded))
-#             except Exception as e:
-#                 print(f"Error processing {file_path} with {sensor_loc}: {e}")
-#                 continue
-#         if subject_data:
-#             all_subjects.append(subject_data)
-
-#     def alt_format_data(all_subjects, indices):
-#         # Start with first subject's data
-#         current_har_subject_data = HARWindowDataset.decouple_combine(all_subjects[indices[0]])
-        
-#         # Combine with remaining subjects
-#         for i in indices[1:]:
-#             next_subject_data = HARWindowDataset.decouple_combine(all_subjects[i])
-#             current_har_subject_data = current_har_subject_data.combine_with(next_subject_data)
-        
-#         return current_har_subject_data
-    
-
-#     # Split subjects into train/val/test before concatenating
-#     n_subjects = len(all_subjects)
-#     indices = np.arange(n_subjects)
-    
-#     # First split: 60% train, 40% temp
-#     train_indices, temp_indices = train_test_split(
-#         indices, test_size=args.test_size, random_state=args.random_seed
-#     )
-    
-#     # Second split: 20% val, 20% test (from the 40% temp)
-#     val_indices, test_indices = train_test_split(
-#         temp_indices, test_size=0.5, random_state=args.random_seed
-#     )
-
-#     train_data = alt_format_data(all_subjects, train_indices)
-#     val_data = alt_format_data(all_subjects, val_indices)
-#     test_data = alt_format_data(all_subjects, test_indices)
-    
-#     return train_data, val_data, test_data
-
-# def partition_across_subjects_v1(data_paths, args):
-#     all_subjects = [] 
-
-#     for file_path in tqdm(data_paths):
-#         subject_data = []
-#         for sensor_loc in args.sensor_loc:
-#             try:
-#                 X, _, y = load_and_process_data(file_path, args, sensor_loc)
-#                 temp = list(y)
-#                 y_encoded= np.array([args.encoder_dict[label[0]] for label in temp])
-#                 subject_data.append(v1.HARWindowDatasetV1(X, y_encoded))
-#             except Exception as e:
-#                 print(f"Error processing {file_path} with {sensor_loc}: {e}")
-#                 continue
-#         if subject_data:
-#             all_subjects.append(subject_data)
-
-#     def alt_format_data(all_subjects, indices):
-#         # Start with first subject's data
-#         current_har_subject_data = v1.HARWindowDatasetV1.decouple_combine(all_subjects[indices[0]])
-        
-#         # Combine with remaining subjects
-#         for i in indices[1:]:
-#             next_subject_data = v1.HARWindowDatasetV1.decouple_combine(all_subjects[i])
-#             current_har_subject_data = current_har_subject_data.combine_with(next_subject_data)
-        
-#         return current_har_subject_data
-    
-
-#     # Split subjects into train/val/test before concatenating
-#     n_subjects = len(all_subjects)
-#     indices = np.arange(n_subjects)
-    
-#     # First split: 60% train, 40% temp
-#     train_indices, temp_indices = train_test_split(
-#         indices, test_size=args.test_size, random_state=args.random_seed
-#     )
-    
-#     # Second split: 20% val, 20% test (from the 40% temp)
-#     val_indices, test_indices = train_test_split(
-#         temp_indices, test_size=0.5, random_state=args.random_seed
-#     )
-
-#     train_data = alt_format_data(all_subjects, train_indices)
-#     val_data = alt_format_data(all_subjects, val_indices)
-#     test_data = alt_format_data(all_subjects, test_indices)
-    
-#     return train_data, val_data, test_data
-
-# def partition_across_sensors(data_paths, args):
-#     X_all = []
-#     X_meta_all = []
-#     y_all = []
-
-#     for file_path in tqdm(data_paths):
-#         for sensor_loc in args.sensor_loc:
-#             try:
-#                 X, X_meta, y = load_and_process_data(file_path, args, sensor_loc)
-#                 # X, X_meta, y = load_and_process_data_with_chunks(file_path, args, chunk_size=1500, sensor_loc=sensor_loc)
-#                 print(f"Data shapes - X: {X.shape}, X_meta: {X_meta.shape}, y: {y.shape}")
-#                 print(f"Unique activities in y: {np.unique(y)}")
-                
-#                 X_all.append(X)
-#                 X_meta_all.append(X_meta)
-#                 y_all.append(y)
-#             except Exception as e:
-#                 print(f"Error processing {file_path} with {sensor_loc}: {e}")
-#                 continue
-
-#     # Split sensor streams into train/val/test before concatenating
-#     n_sensors = len(X_all)
-#     indices = np.arange(n_sensors)
-    
-#     # First split: 60% train, 40% temp
-#     train_indices, temp_indices = train_test_split(
-#         indices, test_size=args.test_size, random_state=args.random_seed
-#     )
-    
-#     # Second split: 20% val, 20% test (from the 40% temp)
-#     val_indices, test_indices = train_test_split(
-#         temp_indices, test_size=0.5, random_state=args.random_seed)
-    
-#     def format_data(X_all, X_meta_all, y_all, indices, args):
-#         X = np.concatenate([X_all[i] for i in indices], axis=0)
-#         X_meta = np.concatenate([X_meta_all[i] for i in indices], axis=0)
-#         y = np.concatenate([y_all[i] for i in indices], axis=0).ravel()
-#         y_int = np.array([args.encoder_dict[label] for label in y])
-#         return HARWindowDataset(X, X_meta, y_int)
-    
-#     training_data = format_data(X_all, X_meta_all, y_all, train_indices, args)
-#     val_data = format_data(X_all, X_meta_all, y_all, val_indices, args)
-#     test_data = format_data(X_all, X_meta_all, y_all, test_indices, args)
-
-#     return training_data, val_data, test_data
 
 from torch.optim.lr_scheduler import LambdaLR
 import math
@@ -606,12 +450,8 @@ if __name__ == "__main__":
     # Set seed before any other operations
     set_all_seeds(42)
 
-    # ADD_NOISY_DATA = True
-
-    config = Config.from_yaml('new_config.yml')
+    config = Config.from_yaml('config.yml')
     data_loader = GeneralDataLoader.from_yaml(config.get_data_config_path())
-    # with open("config.yml", "r") as f:
-    #     config = yaml.safe_load(f)
 
     run = wandb.init(
         entity=config.wandb.entity,
@@ -619,60 +459,8 @@ if __name__ == "__main__":
         config=config.transformer,
         mode=config.wandb.mode,
     )
-
-    # if not DEBUG_MODE:
-        # If we're in a sweep, this will use the sweep config
-        # If not, it will use the default config from config.yml
-        # if wandb.run.sweep_id is not None:
-        #     config = wandb.config
-        # else:
-        #     with open("config.yml", "r") as f:
-        #         config = yaml.safe_load(f)['transformer']
-        #         wandb.config.update(config)
-    # else:
-    #     with open("config.yml", "r") as f:
-    #         config = yaml.safe_load(f)['transformer']
     decoder_dict = data_loader.decoder_dict
-    # args = TConfig(**config)
-    # if not DEBUG_MODE:
-    #     run.config.update(config['transformer'])
-    #     if wandb.run.sweep_id is not None:
-    #         config = wandb.config
-    #     else:
-    #         with open("config.yml", "r") as f:
-    #             config = yaml.safe_load(f)['transformer']
-    #             wandb.config.update(config)
-        
-    # else:
-    #     print(f"{ANSI_CYAN}DEBUG MODE: Will not log to wandb{ANSI_RESET}")
 
-    # args = TConfig(**config['transformer'])
-
-
-
-    # raw_data_paths = [f"{args.data_dir}{num}.csv" for num in dataset_numbers]
-
-    # decoder_dict = args.decoder_dict
-
-    # train_data, val_data, test_data = partition_across_subjects_v1(raw_data_paths, args)
-    
-    # if ADD_NOISY_DATA:
-    #     no_ankle_data_paths = [f"{args.data_dir}{num}.csv" for num in no_ankle]
-    #     noise_train_data, noise_val_data, noise_test_data = partition_across_subjects_v1(no_ankle_data_paths, args)
-        
-    #     train_data = train_data.combine_with(noise_train_data)
-    #     val_data = val_data.combine_with(noise_val_data)
-    #     test_data = test_data.combine_with(noise_test_data)
-
-    
-    # os.makedirs(args.out_data_dir, exist_ok=True)
-
-    # Save datasets
-    # print("Saving processed datasets...")
-    # torch.save(train_data, f'{args.out_data_dir}train_data.pt')
-    # torch.save(val_data, f'{args.out_data_dir}val_data.pt')
-    # torch.save(test_data, f'{args.out_data_dir}test_data.pt')
-    # print("Datasets saved successfully!")
     train_data = data_loader.get_har_dataset('train')
     val_data = data_loader.get_har_dataset('val')
     test_data = data_loader.get_har_dataset('test')
@@ -686,8 +474,11 @@ if __name__ == "__main__":
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.transformer.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.transformer.batch_size)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
-    stats_pp = v1.TorchStatsPipeline(config.transformer.extracted_features, data_loader.data_config.in_seq_dim)
-    # stats_pp = None
+    stats_pp = None
+
+    if config.transformer.extracted_features is not None:
+        stats_pp = v1.TorchStatsPipeline(config.transformer.extracted_features, 
+                                         data_loader.data_config.in_seq_dim)
 
     # === Model, loss, optimizer ===
     model = v1.AccelTransformerV1(
@@ -736,16 +527,15 @@ if __name__ == "__main__":
                                                         verbose=True, graph_path=config.output_paths.plots_dir)
     
     
-    # print("testing f1 best model:")
-    # checkpoint = torch.load(f"{args.weights_out_dir}/best_loss_accel_transformer.pth")
+    print("testing f1 best model:")
+    checkpoint = torch.load(f"{config.output_paths.models_dir}/best_loss_accel_transformer.pth")
 
-    # model.load_state_dict(checkpoint['model_state_dict'])
-    # print(f"===(Testing)===")
-    # best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, 
-    #                                                     name=f"best_loss_model_ep{checkpoint['epoch']}", 
-    #                                                     verbose=True, graph_path=args.figure_out_dir)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    print(f"===(Testing)===")
+    best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, 
+                                                        name=f"best_loss_model_ep{checkpoint['epoch']}", 
+                                                        verbose=True, graph_path=config.output_paths.plots_dir)
 
-    # if not DEBUG_MODE:
     run.finish()
 
     exit()

@@ -17,7 +17,7 @@ from src.preprocessing import (
     zero_crossing,
     derive_periodic_features
 )
-from src.constants import WINDOW_SIZE, SZ_META_DATA
+from src.exp.wip.constants import WINDOW_SIZE, SZ_META_DATA
 
 @pytest.fixture
 def sample_data():

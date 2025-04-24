@@ -150,8 +150,8 @@ class Config:
 
 if __name__ == "__main__":
     import data
-
-    config = Config.from_yaml('new_config.yml')
+    config = Config.from_yaml('config.yml')
     print(config.get_data_config_path())
     data_loader = data.GeneralDataLoader.from_yaml(config.get_data_config_path())
     X, y = data_loader.get_Xy('train')
+    print(config.transformer.extracted_features)
