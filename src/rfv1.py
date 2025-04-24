@@ -13,7 +13,8 @@ from scipy.fft import fft
 from dataclasses import dataclass, field
 import yaml
 from typing import List
-from model_version.v1 import HARWindowDatasetV1, TorchStatsPipeline
+from model_version.v1 import TorchStatsPipeline
+from data import HarDataset
 import os
 from tqdm import tqdm
 import torch
@@ -22,7 +23,7 @@ from sklearn.metrics import make_scorer, accuracy_score, f1_score
 from config import Config
 from data import GeneralDataLoader
 
-def process_for_rf(dataset: HARWindowDatasetV1):
+def process_for_rf(dataset: HarDataset):
     # Keep data on GPU if it's already there, or move it
     X = dataset.X.cuda() if torch.cuda.is_available() else dataset.X
     y = dataset.y

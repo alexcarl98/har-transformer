@@ -8,25 +8,15 @@ from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 import numpy as np
 import random
 from tqdm import tqdm
-# from constants import *
 from sklearn.metrics import classification_report, accuracy_score
-# from preprocessing import load_and_process_data, split_data, encode_labels, load_and_process_data_with_chunks
-# from har_model import AccelTransformer, HARWindowDataset
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc
-import logging
 import model_version.v1 as v1
-import yaml
 import wandb
-from datetime import datetime
-from torchinfo import summary
 import os
 from config import Config
 from data import GeneralDataLoader
-DEBUG_MODE = False
-DO_SWEEP = False
-run = None
+
 
 ANSI_CYAN = "\033[96m"
 ANSI_GREEN = "\033[92m"
@@ -41,7 +31,7 @@ ANSI_RESET = "\033[0m"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def val_batchX_labels(x_seq, y_true, y_pred, decoder_dict, current_number, num_samples=9, name=''):
+def val_batchX_labels(x_seq, y_true, y_pred, decoder_dict, current_number, num_samples=9, name='', feature_names=None, plot_dir=''):
     """
     Visualize sample predictions from a batch alongside their signals in a 3x3 grid
     
@@ -84,7 +74,6 @@ def val_batchX_labels(x_seq, y_true, y_pred, decoder_dict, current_number, num_s
         
         # Plot each feature (x, y, z, vm if available)
         colors = ['red', 'green', 'blue', 'purple']
-        feature_names = data_loader.data_config.ft_col
         
         for i, (feature, color) in enumerate(zip(feature_names, colors)):
             signal_data = sequence[:, i]
@@ -106,19 +95,19 @@ def val_batchX_labels(x_seq, y_true, y_pred, decoder_dict, current_number, num_s
     plt.suptitle('Sample Predictions from Validation Batch', fontsize=16, y=1.02)
     plt.tight_layout()
     if name:
-        full_path = f'{config.output_paths.plots_dir}/{name}_batch_predictions_{current_number}.png'
+        full_path = f'{plot_dir}/{name}_batch_predictions_{current_number}.png'
     else:
-        full_path = f'{config.output_paths.plots_dir}/batch_predictions_{current_number}.png'
+        full_path = f'{plot_dir}/batch_predictions_{current_number}.png'
     
     # Save and log to wandb if not in debug mode
     plt.savefig(full_path, bbox_inches='tight')
-    if not DEBUG_MODE:
-        run.log({
-            f"{name}_batch_predictions_{current_number}": wandb.Image(
-                plt.imread(full_path),
-                caption="Sample Predictions from Validation Batch"
-            )
-        })
+    
+    # run.log({
+    #     f"{name}_batch_predictions_{current_number}": wandb.Image(
+    #         plt.imread(full_path),
+    #         caption="Sample Predictions from Validation Batch"
+    #     )
+    # })
     plt.close()
 
 def plot_roc_curves(true, all_outputs, decoder_dict, name="model", graph_path=''):
@@ -162,14 +151,13 @@ def plot_roc_curves(true, all_outputs, decoder_dict, name="model", graph_path=''
     # Save and log the ROC curve
     plt.savefig(f'{graph_path}/{name}_roc_curves.png')
     roc_im = plt.imread(f'{graph_path}/{name}_roc_curves.png')
-    if not DEBUG_MODE:
-        run.log({
-            f"{name}_roc_curves": wandb.Image(roc_im, caption=f"{name} ROC Curves")
-        })
+    # run.log({
+    #     f"{name}_roc_curves": wandb.Image(roc_im, caption=f"{name} ROC Curves")
+    # })
     plt.close()
 
 
-def evaluate_model(model, data_loader, criterion, name="model",verbose=False, graph_path=''):
+def evaluate_model(model, data_loader, criterion, name="model",verbose=False, graph_path='',decoder_dict=None,feature_names=None):
     model.eval()
     total_loss = 0.0
     predictions = []
@@ -238,8 +226,7 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
             'overall/weighted_avg_f1': report['weighted avg']['f1-score'],
         })
         # Log to wandb
-        if not DEBUG_MODE:
-            run.log(metrics)
+        # run.log(metrics)
 
         # Calculate both raw and normalized confusion matrices
         cm = confusion_matrix(true, predictions)
@@ -268,10 +255,9 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
         cm_path = f'{graph_path}/{name}_confusion_matrix.png'
         plt.savefig(cm_path, bbox_inches='tight', dpi=300)
         im = plt.imread(cm_path)
-        if not DEBUG_MODE:
-            run.log({
-                f"{name}_confusion_matrix": wandb.Image(im, caption=f"{name} Confusion Matrix")
-            })
+        # run.log({
+        #     f"{name}_confusion_matrix": wandb.Image(im, caption=f"{name} Confusion Matrix")
+        # })
         # Plot ROC curves
         plot_roc_curves(true, all_outputs, decoder_dict, name, graph_path)
         
@@ -287,7 +273,7 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
                 outputs = model(x_seq)
                 pred_classes = torch.argmax(outputs, dim=1)
                 val_batchX_labels(x_seq, y_true, pred_classes, decoder_dict,
-                                   counter+1, num_samples=9, name=name)
+                                   counter+1, num_samples=9, name=name, feature_names=feature_names, plot_dir=graph_path)
                 break
         plt.close()
     
@@ -296,7 +282,7 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
 
 def save_model(epoch, model_state, optimizer_state, 
                train_loss, val_loss, val_f1, 
-               name="model"):
+               name="model",model_out_path=''):
     torch.save({
         'epoch': epoch,
         'model_state_dict': model_state,
@@ -304,7 +290,7 @@ def save_model(epoch, model_state, optimizer_state,
         'train_loss': train_loss,
         'val_loss': val_loss,
         'val_f1': val_f1,
-    }, f"{config.output_paths.models_dir}/{name}.pth")
+    }, f"{model_out_path}/{name}.pth")
 
 
 from torch.optim.lr_scheduler import LambdaLR
@@ -329,7 +315,7 @@ def get_lr_scheduler(optimizer, warmup_steps, total_steps):
     
     return LambdaLR(optimizer, lr_lambda)
 
-def train_model(args, train_loader, val_data, model, optimizer, criterion, device):
+def train_model(args, train_loader, val_data, model, optimizer, criterion, device, model_out_path=''):
     best_val_f1 = 0.0
     best_val_loss = float('inf')
     best_f1_state = None
@@ -394,13 +380,12 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
         avg_val_loss, f1 = evaluate_model(model, val_data, criterion)
         print(f"Validation - Avg Loss: {avg_val_loss:.4f}, F1 Score: {f1:.4f}")
 
-        if not DEBUG_MODE:
-            run.log({
-                "train_loss": avg_train_loss,
-                "train_accuracy": train_accuracy,
-                "val_loss": avg_val_loss,
-                "val_f1": f1,
-            })
+        # run.log({
+        #     "train_loss": avg_train_loss,
+        #     "train_accuracy": train_accuracy,
+        #     "val_loss": avg_val_loss,
+        #     "val_f1": f1,
+        # })
 
         # Save best F1 model
         if f1 > best_val_f1:
@@ -409,7 +394,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
             patience_counter = 0
             save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
                       avg_train_loss, avg_val_loss, f1, 
-                      name="best_f1_accel_transformer")
+                      name="best_f1_accel_transformer",model_out_path=model_out_path)
             print(f'New best F1 model saved! Validation F1: {f1:.4f}')
 
         # Save best loss model
@@ -418,7 +403,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
             best_loss_state = model.state_dict().copy()
             save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
                       avg_train_loss, avg_val_loss, f1, 
-                      name="best_loss_accel_transformer")
+                      name="best_loss_accel_transformer",model_out_path=model_out_path)
             print(f'New best loss model saved! Validation Loss: {avg_val_loss:.4f}')
         else:
             patience_counter += 1
@@ -434,7 +419,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
     
     save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
                avg_train_loss, last_avg_loss, last_f1, 
-               name="last_accel_transformer")
+               name="last_accel_transformer",model_out_path=model_out_path)
 
 def set_all_seeds(seed):
     """Set all seeds to make results reproducible"""
@@ -446,6 +431,10 @@ def set_all_seeds(seed):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
 
+
+# def main():
+
+
 if __name__ == "__main__":
     # Set seed before any other operations
     set_all_seeds(42)
@@ -453,12 +442,12 @@ if __name__ == "__main__":
     config = Config.from_yaml('config.yml')
     data_loader = GeneralDataLoader.from_yaml(config.get_data_config_path())
 
-    run = wandb.init(
-        entity=config.wandb.entity,
-        project=config.wandb.project,
-        config=config.transformer,
-        mode=config.wandb.mode,
-    )
+    # run = wandb.init(
+    #     entity=config.wandb.entity,
+    #     project=config.wandb.project,
+    #     config=config.transformer,
+    #     mode=config.wandb.mode,
+    # )
     decoder_dict = data_loader.decoder_dict
 
     train_data = data_loader.get_har_dataset('train')
@@ -504,7 +493,7 @@ if __name__ == "__main__":
     
     criterion = nn.CrossEntropyLoss()
 
-    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, DEVICE)
+    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, DEVICE, config.output_paths.models_dir)
     
 
     print("testing most recent model:")
@@ -515,7 +504,8 @@ if __name__ == "__main__":
     print(f"===(Testing)===")
     test_avg_loss, test_f1 = evaluate_model(model, test_loader, criterion, 
                                             name=f"last_model_ep{checkpoint['epoch']}", 
-                                            verbose=True, graph_path=config.output_paths.plots_dir)
+                                            verbose=True, graph_path=config.output_paths.plots_dir,
+                                            decoder_dict=decoder_dict, feature_names=data_loader.data_config.ft_col)
 
     print("testing f1 best model:")
     checkpoint = torch.load(f"{config.output_paths.models_dir}/best_f1_accel_transformer.pth")
@@ -524,7 +514,8 @@ if __name__ == "__main__":
     print(f"===(Testing)===")
     best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, 
                                                         name=f"best_f1_model_ep{checkpoint['epoch']}", 
-                                                        verbose=True, graph_path=config.output_paths.plots_dir)
+                                                        verbose=True, graph_path=config.output_paths.plots_dir,
+                                                        decoder_dict=decoder_dict, feature_names=data_loader.data_config.ft_col)
     
     
     print("testing f1 best model:")
@@ -534,8 +525,9 @@ if __name__ == "__main__":
     print(f"===(Testing)===")
     best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, 
                                                         name=f"best_loss_model_ep{checkpoint['epoch']}", 
-                                                        verbose=True, graph_path=config.output_paths.plots_dir)
+                                                        verbose=True, graph_path=config.output_paths.plots_dir,
+                                                        decoder_dict=decoder_dict, feature_names=data_loader.data_config.ft_col)
 
-    run.finish()
+    # run.finish()
 
     exit()

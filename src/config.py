@@ -49,18 +49,18 @@ class OutputPathsConfig:
     def __post_init__(self):
         if not os.path.exists(self.base_path):
             os.makedirs(self.base_path)
-        else:
-            # Clean up empty directories
-            for root, dirs, files in os.walk(self.base_path, topdown=False):
-                for dir_name in dirs:
-                    dir_path = os.path.join(root, dir_name)
-                    try:
-                        # Check if directory is empty (no files and no non-empty subdirectories)
-                        if not os.listdir(dir_path):
-                            os.rmdir(dir_path)
-                    except OSError:
-                        # Skip if directory can't be removed (e.g., permission issues or not empty)
-                        continue
+        # else:
+        #     # Clean up empty directories
+        #     for root, dirs, files in os.walk(self.base_path, topdown=False):
+        #         for dir_name in dirs:
+        #             dir_path = os.path.join(root, dir_name)
+        #             try:
+        #                 # Check if directory is empty (no files and no non-empty subdirectories)
+        #                 if not os.listdir(dir_path):
+        #                     os.rmdir(dir_path)
+        #             except OSError:
+        #                 # Skip if directory can't be removed (e.g., permission issues or not empty)
+        #                 continue
         
         if not self.run_id:
             self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
