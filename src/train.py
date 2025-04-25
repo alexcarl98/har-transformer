@@ -31,7 +31,7 @@ ANSI_RESET = "\033[0m"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def val_batchX_labels(x_seq, y_true, y_pred, decoder_dict, current_number, num_samples=9, name='', feature_names=None, plot_dir=''):
+def val_batchX_labels(x_seq, y_true, y_pred, class_names, current_number, num_samples=9, name='', feature_names=None, plot_dir=''):
     """
     Visualize sample predictions from a batch alongside their signals in a 3x3 grid
     
@@ -66,8 +66,8 @@ def val_batchX_labels(x_seq, y_true, y_pred, decoder_dict, current_number, num_s
         
         # Get the sequence data for this sample
         sequence = x_seq[sample_idx]  # shape: (seq_len, features)
-        true_label = decoder_dict[y_true[sample_idx]]
-        pred_label = decoder_dict[y_pred[sample_idx]]
+        true_label = class_names[y_true[sample_idx]]
+        pred_label = class_names[y_pred[sample_idx]]
         
         # Calculate time points
         time_points = np.arange(sequence.shape[0])
@@ -110,22 +110,22 @@ def val_batchX_labels(x_seq, y_true, y_pred, decoder_dict, current_number, num_s
     # })
     plt.close()
 
-def plot_roc_curves(true, all_outputs, decoder_dict, name="model", graph_path=''):
+def plot_roc_curves(true, all_outputs, class_names, name="model", graph_path=''):
     """
     Plot ROC curves for each class
     
     Args:
-        true: numpy array of true labels
+        true: numpy array of true labels (integers)
         all_outputs: torch tensor of model outputs
-        decoder_dict: dictionary mapping indices to class names
+        class_names: list of class names as strings
         name: name prefix for saving the plot
+        graph_path: path to save the graph
     """
     # Binarize the labels for ROC curve
-    n_classes = len(decoder_dict)
-    # Convert classes to consecutive integers starting from 0
-    class_mapping = {c: i for i, c in enumerate(sorted(decoder_dict.values()))}
-    true_mapped = np.array([class_mapping[decoder_dict[t]] for t in true])
-    true_bin = label_binarize(true_mapped, classes=range(n_classes))
+    n_classes = len(class_names)
+    
+    # No need to map if already integers
+    true_bin = label_binarize(true, classes=range(n_classes))
     
     # Get prediction probabilities for all data
     pred_proba = torch.softmax(all_outputs, dim=1).numpy()
@@ -134,11 +134,11 @@ def plot_roc_curves(true, all_outputs, decoder_dict, name="model", graph_path=''
     plt.figure(figsize=(10, 8))
     colors = plt.cm.get_cmap('Set3')(np.linspace(0, 1, n_classes))
     
-    for i, (class_idx, label) in enumerate(sorted(decoder_dict.items())):
-        fpr, tpr, _ = roc_curve(true_bin[:, class_mapping[label]], pred_proba[:, class_idx])
+    for i, class_name in enumerate(sorted(class_names)):
+        fpr, tpr, _ = roc_curve(true_bin[:, i], pred_proba[:, i])
         roc_auc = auc(fpr, tpr)
         plt.plot(fpr, tpr, color=colors[i], lw=2,
-                label=f'{label} (AUC = {roc_auc:.2f})')
+                label=f'{class_name} (AUC = {roc_auc:.2f})')
     
     plt.plot([0, 1], [0, 1], 'k--', lw=2)
     plt.xlim([0.0, 1.0])
@@ -151,13 +151,51 @@ def plot_roc_curves(true, all_outputs, decoder_dict, name="model", graph_path=''
     # Save and log the ROC curve
     plt.savefig(f'{graph_path}/{name}_roc_curves.png')
     roc_im = plt.imread(f'{graph_path}/{name}_roc_curves.png')
-    # run.log({
-    #     f"{name}_roc_curves": wandb.Image(roc_im, caption=f"{name} ROC Curves")
-    # })
     plt.close()
 
 
-def evaluate_model(model, data_loader, criterion, name="model",verbose=False, graph_path='',decoder_dict=None,feature_names=None):
+def plot_confusion_matrix(true, predictions, class_names, name="model", graph_path=''):
+    cm = confusion_matrix(true, predictions)
+    cm_norm = confusion_matrix(true, predictions, normalize='true')
+
+    # Reduced figure size and adjusted font sizes
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))  # Smaller figure size
+    
+    # Set font sizes
+    plt.rcParams.update({
+        'font.size': 8,           # Base font size
+        'axes.titlesize': 10,     # Title font size
+        'axes.labelsize': 9,      # Axis label size
+    })
+
+    # Raw counts
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=class_names,
+                yticklabels=class_names, ax=ax1,
+                annot_kws={'size': 8})  # Annotation font size
+    ax1.set_xlabel('Predicted')
+    ax1.set_ylabel('True')
+    ax1.set_title('Confusion Matrix (Raw Counts)')
+
+    # Normalized values
+    sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Blues',
+                xticklabels=class_names,
+                yticklabels=class_names, ax=ax2,
+                annot_kws={'size': 8})  # Annotation font size
+    ax2.set_xlabel('Predicted')
+    ax2.set_ylabel('True')
+    ax2.set_title('Confusion Matrix (Normalized by True Label)')
+
+    plt.tight_layout()
+    cm_path = f'{graph_path}/{name}_confusion_matrix.png'
+    plt.savefig(cm_path, 
+                bbox_inches='tight', 
+                dpi=150)  # Lower DPI
+    im = plt.imread(cm_path)
+    plt.close()  # Close the figure to free memory
+
+
+def evaluate_model(model, data_loader, criterion, name="model",verbose=False, graph_path='',class_names=None,feature_names=None):
     model.eval()
     total_loss = 0.0
     predictions = []
@@ -200,66 +238,21 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
     # Calculate validation metrics
     predictions = np.array(predictions)
     true = np.array(true)
+
     precision, recall, f1, _ = precision_recall_fscore_support(true, predictions, average='macro')
     avg_loss = total_loss / len(data_loader.dataset)
 
     if verbose:
-        print(classification_report(true, predictions))
+        print(classification_report(true, predictions, target_names=class_names))
 
     if graph_path:
-        report = classification_report(true, predictions, output_dict=True)
-        # Log metrics for each class
-        metrics = {}
-        for class_name, class_metrics in report.items():
-            if isinstance(class_metrics, dict):  # Skip 'accuracy' which isn't a dict
-                for metric_name, value in class_metrics.items():
-                    metrics[f"{class_name}/{metric_name}"] = value
-        
-        # Log overall metrics
-        metrics.update({
-            'overall/accuracy': report['accuracy'],
-            'overall/macro_avg_precision': report['macro avg']['precision'],
-            'overall/macro_avg_recall': report['macro avg']['recall'],
-            'overall/macro_avg_f1': report['macro avg']['f1-score'],
-            'overall/weighted_avg_precision': report['weighted avg']['precision'],
-            'overall/weighted_avg_recall': report['weighted avg']['recall'],
-            'overall/weighted_avg_f1': report['weighted avg']['f1-score'],
-        })
-        # Log to wandb
-        # run.log(metrics)
-
+        # results = classification_report(true, predictions, target_names=decoder_dict, output_dict=True)
+        # print(results)
+        # exit()
         # Calculate both raw and normalized confusion matrices
-        cm = confusion_matrix(true, predictions)
-        cm_norm = confusion_matrix(true, predictions, normalize='true')  # normalize by row (true labels)
-
-        # Create a figure with two subplots side by side
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
-
-        # Raw counts
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=decoder_dict.values(),
-                    yticklabels=decoder_dict.values(), ax=ax1)
-        ax1.set_xlabel('Predicted')
-        ax1.set_ylabel('True')
-        ax1.set_title('Confusion Matrix (Raw Counts)')
-
-        # Normalized values (as percentages)
-        sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Blues',  # .1% formats as percentage with 1 decimal
-                    xticklabels=decoder_dict.values(),
-                    yticklabels=decoder_dict.values(), ax=ax2)
-        ax2.set_xlabel('Predicted')
-        ax2.set_ylabel('True')
-        ax2.set_title('Confusion Matrix (Normalized by True Label)')
-
-        plt.tight_layout()
-        cm_path = f'{graph_path}/{name}_confusion_matrix.png'
-        plt.savefig(cm_path, bbox_inches='tight', dpi=300)
-        im = plt.imread(cm_path)
-        # run.log({
-        #     f"{name}_confusion_matrix": wandb.Image(im, caption=f"{name} Confusion Matrix")
-        # })
+        plot_confusion_matrix(true, predictions, class_names, name, graph_path)
         # Plot ROC curves
-        plot_roc_curves(true, all_outputs, decoder_dict, name, graph_path)
+        plot_roc_curves(true, all_outputs, class_names, name, graph_path)
         
         idx_1= len(data_loader)//4
         idx_2= len(data_loader)//2
@@ -272,7 +265,7 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
                 x_seq,  y_true = x_seq.to(DEVICE), y_true.to(DEVICE)
                 outputs = model(x_seq)
                 pred_classes = torch.argmax(outputs, dim=1)
-                val_batchX_labels(x_seq, y_true, pred_classes, decoder_dict,
+                val_batchX_labels(x_seq, y_true, pred_classes, class_names,
                                    counter+1, num_samples=9, name=name, feature_names=feature_names, plot_dir=graph_path)
                 break
         plt.close()
@@ -292,42 +285,13 @@ def save_model(epoch, model_state, optimizer_state,
         'val_f1': val_f1,
     }, f"{model_out_path}/{name}.pth")
 
-
-from torch.optim.lr_scheduler import LambdaLR
-import math
-
-def get_lr_scheduler(optimizer, warmup_steps, total_steps):
-    """
-    Creates a learning rate scheduler with linear warmup and cosine decay
-    
-    Args:
-        optimizer: The optimizer
-        warmup_steps: Number of warmup steps
-        total_steps: Total number of training steps
-    """
-    def lr_lambda(current_step):
-        if current_step < warmup_steps:
-            # Linear warmup
-            return float(current_step) / float(max(1, warmup_steps))
-        # Cosine decay
-        progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
-        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
-    
-    return LambdaLR(optimizer, lr_lambda)
-
-def train_model(args, train_loader, val_data, model, optimizer, criterion, device, model_out_path=''):
+def train_model(args, train_loader, val_data, model, optimizer, criterion, model_out_path=''):
     best_val_f1 = 0.0
     best_val_loss = float('inf')
-    best_f1_state = None
-    best_loss_state = None
     patience_counter = 0
     current_epoch = 0
     last_avg_loss = 0.0
     last_f1 = 0.0
-
-    total_steps = len(train_loader) * args.epochs
-    warmup_steps = int(total_steps * args.warmup_ratio)  # 10% of total steps for warmup
-    # scheduler = get_lr_scheduler(optimizer, warmup_steps, total_steps)
 
     if args.load_model_path:
         checkpoint = torch.load(args.load_model_path)
@@ -336,7 +300,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
         best_val_f1 = checkpoint['val_f1']
         best_val_loss = checkpoint.get('val_loss', float('inf'))
 
-    for epoch in range(args.epochs):
+    for _ in range(args.epochs):
         current_epoch += 1
         model.train()
         train_loss = 0.0
@@ -389,24 +353,24 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
 
         # Save best F1 model
         if f1 > best_val_f1:
-            best_val_f1 = f1
-            best_f1_state = model.state_dict().copy()
             patience_counter = 0
-            save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
-                      avg_train_loss, avg_val_loss, f1, 
-                      name="best_f1_accel_transformer",model_out_path=model_out_path)
-            print(f'New best F1 model saved! Validation F1: {f1:.4f}')
-
-        # Save best loss model
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            best_loss_state = model.state_dict().copy()
-            save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
-                      avg_train_loss, avg_val_loss, f1, 
-                      name="best_loss_accel_transformer",model_out_path=model_out_path)
-            print(f'New best loss model saved! Validation Loss: {avg_val_loss:.4f}')
         else:
             patience_counter += 1
+
+        if f1 > best_val_f1:
+            best_val_f1 = f1
+            save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
+                      avg_train_loss, avg_val_loss, f1, 
+                      name="best_f1",model_out_path=model_out_path)
+            print(f'New best F1 model saved! Validation F1: {f1:.4f}')
+
+        # # Save best loss model
+        # if avg_val_loss < best_val_loss:
+        #     best_val_loss = avg_val_loss
+        #     save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
+        #               avg_train_loss, avg_val_loss, f1, 
+        #               name="best_loss",model_out_path=model_out_path)
+        #     print(f'New best loss model saved! Validation Loss: {avg_val_loss:.4f}')
         
         last_avg_loss = avg_val_loss
         last_f1 = f1
@@ -419,7 +383,7 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, devic
     
     save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
                avg_train_loss, last_avg_loss, last_f1, 
-               name="last_accel_transformer",model_out_path=model_out_path)
+               name="last",model_out_path=model_out_path)
 
 def set_all_seeds(seed):
     """Set all seeds to make results reproducible"""
@@ -432,8 +396,13 @@ def set_all_seeds(seed):
     os.environ['PYTHONHASHSEED'] = str(seed)
 
 
-# def main():
-
+def evaluate_and_save_metrics(name, model, test_loader, criterion, output_path, classes, ft_col):
+    checkpoint = torch.load(f"{model_dir}/{name}.pth")
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return evaluate_model(model, test_loader, criterion, 
+                                            name=name, 
+                                            verbose=True, graph_path=output_path,
+                                            class_names=classes, feature_names=ft_col)
 
 if __name__ == "__main__":
     # Set seed before any other operations
@@ -448,7 +417,7 @@ if __name__ == "__main__":
     #     config=config.transformer,
     #     mode=config.wandb.mode,
     # )
-    decoder_dict = data_loader.decoder_dict
+    # decoder_dict = data_loader.decoder_dict
 
     train_data = data_loader.get_har_dataset('train')
     val_data = data_loader.get_har_dataset('val')
@@ -464,10 +433,10 @@ if __name__ == "__main__":
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.transformer.batch_size)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
     stats_pp = None
+    model_dir = config.output_paths.models_dir
 
-    if config.transformer.extracted_features is not None:
-        stats_pp = v1.TorchStatsPipeline(config.transformer.extracted_features, 
-                                         data_loader.data_config.in_seq_dim)
+    
+
 
     # === Model, loss, optimizer ===
     model = v1.AccelTransformerV1(
@@ -480,9 +449,9 @@ if __name__ == "__main__":
         # num_layers=args.num_layers,
         dropout=config.transformer.dropout,
         patch_size=16,
-        stride=4,
+        kernel_stride=4,
         window_size=data_loader.data_config.window_size,
-        torch_stats_pipeline=stats_pp
+        extracted_features=config.transformer.extracted_features
     ).to(DEVICE)
 
     print(model)
@@ -493,41 +462,22 @@ if __name__ == "__main__":
     
     criterion = nn.CrossEntropyLoss()
 
-    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, DEVICE, config.output_paths.models_dir)
+    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, model_dir)
     
-
     print("testing most recent model:")
 
-    checkpoint = torch.load(f"{config.output_paths.models_dir}/last_accel_transformer.pth")
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    plot_dir = config.output_paths.plots_dir
+    classNames = data_loader.data_config.classes
+    ft_col = data_loader.data_config.ft_col
     print(f"===(Testing)===")
-    test_avg_loss, test_f1 = evaluate_model(model, test_loader, criterion, 
-                                            name=f"last_model_ep{checkpoint['epoch']}", 
-                                            verbose=True, graph_path=config.output_paths.plots_dir,
-                                            decoder_dict=decoder_dict, feature_names=data_loader.data_config.ft_col)
+    evaluate_and_save_metrics('last', model, test_loader, criterion, plot_dir, classNames, ft_col)
 
     print("testing f1 best model:")
-    checkpoint = torch.load(f"{config.output_paths.models_dir}/best_f1_accel_transformer.pth")
+    evaluate_and_save_metrics('best_f1', model, test_loader, criterion, plot_dir, classNames, ft_col)
 
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print(f"===(Testing)===")
-    best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, 
-                                                        name=f"best_f1_model_ep{checkpoint['epoch']}", 
-                                                        verbose=True, graph_path=config.output_paths.plots_dir,
-                                                        decoder_dict=decoder_dict, feature_names=data_loader.data_config.ft_col)
-    
-    
-    print("testing f1 best model:")
-    checkpoint = torch.load(f"{config.output_paths.models_dir}/best_loss_accel_transformer.pth")
-
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print(f"===(Testing)===")
-    best_model_avg_loss, best_model_f1 = evaluate_model(model, test_loader, criterion, 
-                                                        name=f"best_loss_model_ep{checkpoint['epoch']}", 
-                                                        verbose=True, graph_path=config.output_paths.plots_dir,
-                                                        decoder_dict=decoder_dict, feature_names=data_loader.data_config.ft_col)
 
     # run.finish()
+
+    config.output_paths.clean()
 
     exit()

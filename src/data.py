@@ -335,6 +335,8 @@ class DataConfig:
     def num_classes(self):
         return len(self.classes)
 
+    
+
 
 
 def obtain_standard_partitions(bio_data: BiometricsData, activity_list: List[str], yaml_path: str) -> List[List[str]]:
@@ -373,6 +375,10 @@ class GeneralDataLoader:
                 'partitions': self.subject_partitions
             }, sort_keys=True).encode()
         ).hexdigest()
+
+        # print(f"{self.data_config.test_on_sensors=}")
+        # print(f"{self.data_config.train_on_sensors=}")
+        # print(f"{self.hash_value=}")
         if self.data_config.processed_dir is not None:
             os.makedirs(self.data_config.processed_dir, exist_ok=True)
 

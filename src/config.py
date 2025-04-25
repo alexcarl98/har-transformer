@@ -32,6 +32,8 @@ class TConfig:
     num_layers: int = 2
     dropout: float = 0.1
     load_model_path: str = ''
+    patch_size: int = 16
+    kernel_stride: int = 8
 
 @dataclass
 class WandBConfig:
@@ -49,19 +51,7 @@ class OutputPathsConfig:
     def __post_init__(self):
         if not os.path.exists(self.base_path):
             os.makedirs(self.base_path)
-        # else:
-        #     # Clean up empty directories
-        #     for root, dirs, files in os.walk(self.base_path, topdown=False):
-        #         for dir_name in dirs:
-        #             dir_path = os.path.join(root, dir_name)
-        #             try:
-        #                 # Check if directory is empty (no files and no non-empty subdirectories)
-        #                 if not os.listdir(dir_path):
-        #                     os.rmdir(dir_path)
-        #             except OSError:
-        #                 # Skip if directory can't be removed (e.g., permission issues or not empty)
-        #                 continue
-        
+
         if not self.run_id:
             self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -88,6 +78,19 @@ class OutputPathsConfig:
     def get_metrics_path(self, model_name: str) -> str:
         """Get path for saving model metrics"""
         return os.path.join(self.metrics_dir, f"{model_name}_metrics.json")
+    
+    def clean(self):
+        for root, dirs, files in os.walk(self.base_path, topdown=False):
+            for dir_name in dirs:
+                dir_path = os.path.join(root, dir_name)
+                try:
+                    # Check if directory is empty (no files and no non-empty subdirectories)
+                    if not os.listdir(dir_path):
+                        os.rmdir(dir_path)
+                except OSError:
+                    # Skip if directory can't be removed (e.g., permission issues or not empty)
+                    continue
+        
 
 @dataclass
 class Config:

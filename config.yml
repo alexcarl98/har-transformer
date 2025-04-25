@@ -59,10 +59,56 @@ transformer:
   patience: 15
   learning_rate: 0.0015
   weight_decay: 0.0
-  epochs: 3
+  epochs: 1
   d_model: 66
   fc_hidden_dim: 128
   nhead: 6
   num_layers: 2
   dropout: 0.1
   load_model_path: ''
+  patch_size: 16
+  kernel_stride: 8
+
+
+#   ```
+
+#                                                                                                                                                                                                                                                                                                                                                                                 (har-transformer|Alex Alvarez --> stats_pipeline)  (har)
+# Loading data from processed_data/data-ee06a1a0aefd9fa43ff0bd5e1785ec84d0b4b3da9df7dcc06b5f99dcb92787e4.pkl
+# X_train shape: torch.Size([68928, 250, 3])
+# X_val shape: torch.Size([38400, 250, 3])
+# X_test shape: torch.Size([13644, 250, 3])
+# Classes: [0 1 2 3]
+# AccelTransformerV1(
+#   (stats): TorchStatsPipeline(
+#     (stats_norm): LayerNorm((6,), eps=1e-05, elementwise_affine=True)
+#   )
+#   (patch_embedding): SensorPatches(
+#     (projection): Conv1d(3, 66, kernel_size=(16,), stride=(8,), padding=valid)
+#   )
+#   (pos_encoder): LearnablePositionalEncoding(
+#     (position_embedding): Embedding(31, 66)
+#   )
+#   (transformer_encoder): TransformerEncoder(
+#     (layers): ModuleList(
+#       (0-1): 2 x TransformerEncoderLayer(
+#         (self_attn): MultiheadAttention(
+#           (out_proj): NonDynamicallyQuantizableLinear(in_features=66, out_features=66, bias=True)
+#         )
+#         (linear1): Linear(in_features=66, out_features=198, bias=True)
+#         (dropout): Dropout(p=0.1, inplace=False)
+#         (linear2): Linear(in_features=198, out_features=66, bias=True)
+#         (norm1): LayerNorm((66,), eps=1e-05, elementwise_affine=True)
+#         (norm2): LayerNorm((66,), eps=1e-05, elementwise_affine=True)
+#         (dropout1): Dropout(p=0.1, inplace=False)
+#         (dropout2): Dropout(p=0.1, inplace=False)
+#       )
+#     )
+#   )
+#   (meta_proj): Linear(in_features=6, out_features=18, bias=True)
+#   (classifier): Sequential(
+#     (0): Linear(in_features=84, out_features=128, bias=True)
+#     (1): GELU(approximate='none')
+#     (2): Dropout(p=0.1, inplace=False)
+#     (3): Linear(in_features=128, out_features=4, bias=True)
+#   )
+# )

@@ -127,21 +127,23 @@ class LearnablePositionalEncoding(nn.Module):
 
 class AccelTransformerV1(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
-                 in_channels=3, in_meta_dim=3, nhead=4, 
-                 num_layers=2, dropout=0.1, num_classes=6,
-                 patch_size=16, stride=8, window_size=100,
-                 torch_stats_pipeline: TorchStatsPipeline = None):
+                 in_channels=3, nhead=4, num_layers=2, 
+                 dropout=0.1, num_classes=6, patch_size=16, 
+                 kernel_stride=8, window_size=100,
+                 extracted_features: list[str] = None):
         super().__init__()
-        
+        self.stats = None
+        if extracted_features is not None:
+            self.stats = TorchStatsPipeline(extracted_features, in_channels)
         # Calculate expected sequence length after convolution
-        self.max_patches = ((window_size - patch_size) // stride) + 1
+        self.max_patches = ((window_size - patch_size) // kernel_stride) + 1
         
         # Project input sequences into patches
         self.patch_embedding = SensorPatches(
             in_channels=in_channels,
             projection_dim=d_model,
             patch_size=patch_size,
-            stride=stride
+            stride=kernel_stride
         )
         
         # Make sure d_model is divisible by nhead
@@ -167,16 +169,12 @@ class AccelTransformerV1(nn.Module):
         )
         
         # Metadata projection
-        if torch_stats_pipeline is not None:
-            self.stats = torch_stats_pipeline
+        if self.stats is not None:
             stats_dim= self.stats.get_feature_dim()
-            d_model += 3*stats_dim
+            out_dim = 3*stats_dim
+            d_model += out_dim
+            self.meta_proj = nn.Linear(stats_dim, out_dim)
 
-            self.meta_proj = nn.Linear(self.stats.get_feature_dim(), 3*self.stats.get_feature_dim())
-            # d_model += 6*stats_dim
-
-        else:
-            self.stats = None
         # Final classifier
         self.classifier = nn.Sequential(
             nn.Linear(d_model, fc_hidden_dim),  # *2 for meta concat
