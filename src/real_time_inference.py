@@ -29,19 +29,7 @@ class RealTimeInference:
         self.inference_queue = Queue(maxsize=1)  # Only keep latest window
         
     def load_model(self, model_path):
-        model = v1.AccelTransformerV1(
-            d_model=self.args.d_model,
-            fc_hidden_dim=self.args.fc_hidden_dim,
-            num_classes=self.data_config.num_classes,
-            in_channels=self.data_config.in_seq_dim,
-            nhead=self.args.nhead,
-            dropout=self.args.dropout,
-            num_layers=self.args.num_layers,
-            patch_size=self.args.patch_size,
-            kernel_stride=self.args.kernel_stride,
-            window_size=self.data_config.window_size,
-            extracted_features=self.args.extracted_features
-        ).to(self.device)
+        model = v1.AccelTransformerV1(**self.config.get_transformer_params()).to(self.device)
         
         checkpoint = torch.load(model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -126,7 +114,7 @@ class RealTimeInference:
         print("System stopped.")
 
 def main():
-    model_path = '/home/alexa/Documents/har-transformer/outputs/run_20250424_133126/models/best_f1_accel_transformer.pth'
+    model_path = '/home/alexa/Documents/har-transformer/outputs/run_20250424_201936/models/best_f1.pth'
     real_time_system = RealTimeInference(model_path)
     real_time_system.start()
 

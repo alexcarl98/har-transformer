@@ -372,7 +372,7 @@ if __name__ == "__main__":
     set_all_seeds(42)
 
     config = Config.from_yaml('config.yml')
-    data_loader = GeneralDataLoader.from_yaml(config.get_data_config_path())
+    data_loader = GeneralDataLoader(**config.get_data_loader_params())
 
     # run = wandb.init(
     #     entity=config.wandb.entity,
@@ -380,12 +380,10 @@ if __name__ == "__main__":
     #     config=config.transformer,
     #     mode=config.wandb.mode,
     # )
-    # decoder_dict = data_loader.decoder_dict
 
     train_data = data_loader.get_har_dataset('train')
     val_data = data_loader.get_har_dataset('val')
     test_data = data_loader.get_har_dataset('test')
-
 
     print("X_train shape:", train_data.X.shape)
     print("X_val shape:", val_data.X.shape)
@@ -399,19 +397,7 @@ if __name__ == "__main__":
     model_dir = config.output_paths.models_dir
 
     # === Model, loss, optimizer ===
-    model = v1.AccelTransformerV1(
-        d_model=config.transformer.d_model,
-        fc_hidden_dim=config.transformer.fc_hidden_dim,
-        num_classes=len(data_loader.data_config.classes),
-        in_channels=len(data_loader.data_config.ft_col),
-        nhead=config.transformer.nhead,
-        num_layers=config.transformer.num_layers,
-        dropout=config.transformer.dropout,
-        patch_size=config.transformer.patch_size,
-        kernel_stride=config.transformer.kernel_stride,
-        window_size=data_loader.data_config.window_size,
-        extracted_features=config.transformer.extracted_features
-    ).to(DEVICE)
+    model = v1.AccelTransformerV1(**config.get_transformer_params()).to(DEVICE)
 
     print(model)
 
