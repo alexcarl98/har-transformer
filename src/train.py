@@ -18,8 +18,6 @@ from config import Config
 from data import GeneralDataLoader
 
 
-ANSI_CYAN = "\033[96m"
-ANSI_GREEN = "\033[92m"
 ANSI_BLUE = "\033[94m"
 ANSI_RED = "\033[91m"
 ANSI_YELLOW = "\033[93m"
@@ -435,18 +433,14 @@ if __name__ == "__main__":
     stats_pp = None
     model_dir = config.output_paths.models_dir
 
-    
-
-
     # === Model, loss, optimizer ===
     model = v1.AccelTransformerV1(
         d_model=config.transformer.d_model,
         fc_hidden_dim=config.transformer.fc_hidden_dim,
         num_classes=len(data_loader.data_config.classes),
         in_channels=len(data_loader.data_config.ft_col),
-        # in_meta_dim=config.in_meta_dim,
         nhead=config.transformer.nhead,
-        # num_layers=args.num_layers,
+        num_layers=config.transformer.num_layers,
         dropout=config.transformer.dropout,
         patch_size=config.transformer.patch_size,
         kernel_stride=config.transformer.kernel_stride,
