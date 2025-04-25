@@ -6,13 +6,18 @@ from typing import Dict, List
 from itertools import combinations
 from train import *
 
-def cross_sensor_confusion_matrix(config, data_config: DataConfig, bio_data: BiometricsData, parts: Dict[str, List[str]], min_sample_count: int):
-
-    data_loader = GeneralDataLoader(data_config, bio_data, parts, min_sample_count)
+def cross_sensor_confusion_matrix(config: Config):
 
     set_all_seeds(42)
 
-    decoder_dict = data_loader.decoder_dict
+    data_loader = GeneralDataLoader(**config.get_data_loader_params())
+
+    # run = wandb.init(
+    #     entity=config.wandb.entity,
+    #     project=config.wandb.project,
+    #     config=config.transformer,
+    #     mode=config.wandb.mode,
+    # )
 
     train_data = data_loader.get_har_dataset('train')
     val_data = data_loader.get_har_dataset('val')
@@ -26,21 +31,10 @@ def cross_sensor_confusion_matrix(config, data_config: DataConfig, bio_data: Bio
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.transformer.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.transformer.batch_size)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
+    model_dir = config.output_paths.models_dir
 
     # === Model, loss, optimizer ===
-    model = v1.AccelTransformerV1(
-        d_model=config.transformer.d_model,
-        fc_hidden_dim=config.transformer.fc_hidden_dim,
-        num_classes=len(data_loader.data_config.classes),
-        in_channels=len(data_loader.data_config.ft_col),
-        nhead=config.transformer.nhead,
-        num_layers=config.transformer.num_layers,
-        dropout=config.transformer.dropout,
-        patch_size=config.transformer.patch_size,
-        kernel_stride=config.transformer.kernel_stride,
-        window_size=data_loader.data_config.window_size,
-        extracted_features=config.transformer.extracted_features
-    ).to(DEVICE)
+    model = v1.AccelTransformerV1(**config.get_transformer_params()).to(DEVICE)
 
     print(model)
 
@@ -50,12 +44,25 @@ def cross_sensor_confusion_matrix(config, data_config: DataConfig, bio_data: Bio
     
     criterion = nn.CrossEntropyLoss()
 
-    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, DEVICE, config.output_paths.models_dir)
+    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, model_dir)
     
-
     print("testing most recent model:")
-    exit()
 
+    plot_dir = config.output_paths.plots_dir
+    classNames = data_loader.data_config.classes
+    ft_col = data_loader.data_config.ft_col
+    print(f"===(Testing)===")
+    evaluate_and_save_metrics('last', model, test_loader, criterion, plot_dir, classNames, ft_col)
+
+    print("testing f1 best model:")
+    evaluate_and_save_metrics('best_f1', model, test_loader, criterion, plot_dir, classNames, ft_col)
+
+
+    # run.finish()
+
+    config.output_paths.clean()
+
+    exit()
 
 
 def main():
@@ -67,11 +74,9 @@ def main():
     # Load config
     location_outcome_dict = {}
     config = Config.from_yaml('config.yml')
-    data_settings= config.get_data_config_path()
 
     run_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_path = config.output_paths.base_path + f'/ConfusionMatrix_{run_time}'
-    bio_data = BiometricsData.from_csv()
 
     '''
     TODO:
@@ -82,23 +87,21 @@ def main():
         - Transformer Model class
     '''
 
-    data_config = DataConfig.from_yaml(data_settings)
     for i, sensor in enumerate(valid_sensors):
         # you're training the same model three times, make the training and testing separate functions. 
         location_outcome_dict[sensor] = []
-        data_config.test_on_sensors = [sensor]
+        config.data.test_on_sensors = [sensor]
         current_base = base_path + f'/tested_on_{sensor}'
         
         for j, train_sensors in enumerate(to_be_trained_on):
             len_sen = len(train_sensors)
             id = f'{len_sen}-{'-'.join(train_sensors)}'
-            new_output_path = OutputPathsConfig(current_base, data_settings = data_settings, run_id = id)
+            new_output_path = OutputPathsConfig(current_base, run_id = id)
             config.output_paths = new_output_path
-            data_config.train_on_sensors = train_sensors
-            parts, min_sample_count = obtain_standard_partitions(bio_data, data_config.classes, config.get_data_config_path())
+            config.data.train_on_sensors = train_sensors
             
             result_dict = {}
-            outcome = cross_sensor_confusion_matrix(config, data_config, bio_data, parts, min_sample_count)
+            outcome = cross_sensor_confusion_matrix(config)
             result_dict[id] = outcome
             
             location_outcome_dict[sensor].append(result_dict)

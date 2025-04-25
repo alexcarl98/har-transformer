@@ -357,7 +357,11 @@ def set_all_seeds(seed):
     os.environ['PYTHONHASHSEED'] = str(seed)
 
 
-def evaluate_and_save_metrics(name, model, test_loader, criterion, output_path, classes, ft_col):
+def evaluate_and_save_metrics(config, name, model, test_loader, criterion):
+    model_dir = config.output_paths.models_dir
+    output_path = config.output_paths.plots_dir
+    classes = config.data.classes
+    ft_col = config.data.ft_col
     checkpoint = torch.load(f"{model_dir}/{name}.pth")
     model.load_state_dict(checkpoint['model_state_dict'])
     return evaluate_model(model, test_loader, criterion, 
@@ -366,12 +370,72 @@ def evaluate_and_save_metrics(name, model, test_loader, criterion, output_path, 
                                             class_names=classes, feature_names=ft_col)
 
 
+def train_main(config: Config):
+    set_all_seeds(42)
+    data_loader = GeneralDataLoader(**config.get_data_loader_params())
+    # run = wandb.init(
+    #     entity=config.wandb.entity,
+    #     project=config.wandb.project,
+    #     config=config.transformer,
+    #     mode=config.wandb.mode,
+    #     job_type='train',
+    # )
+    train_data = data_loader.get_har_dataset('train')
+    val_data = data_loader.get_har_dataset('val')
+    print("X_train shape:", train_data.X.shape)
+    print("X_val shape:", val_data.X.shape)
+    print("Classes:", np.unique(train_data.y))
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.transformer.batch_size, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.transformer.batch_size)
+    model_dir = config.output_paths.models_dir
+
+    # === Model, loss, optimizer ===
+    model = v1.AccelTransformerV1(**config.get_transformer_params()).to(DEVICE)
+    print(model)
+
+    optimizer = Adam(model.parameters(),
+                      lr=config.transformer.learning_rate, 
+                      weight_decay=config.transformer.weight_decay)
+    
+    criterion = nn.CrossEntropyLoss()
+
+    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, model_dir)
+
+def test_main(config: Config):
+    # run = wandb.init(
+    #     entity=config.wandb.entity,
+    #     project=config.wandb.project,
+    #     config=config.transformer,
+    #     mode=config.wandb.mode,
+    #     job_type='test',
+    # )
+
+    data_loader = GeneralDataLoader(**config.get_data_loader_params())
+    test_data = data_loader.get_har_dataset('test')
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
+
+    model = v1.AccelTransformerV1(**config.get_transformer_params()).to(DEVICE)
+    criterion = nn.CrossEntropyLoss()
+
+    print("testing most recent model:")
+
+    print(f"===(Testing)===")
+    evaluate_and_save_metrics(config, 'last', model, test_loader, criterion)
+
+    print("testing f1 best model:")
+    evaluate_and_save_metrics(config, 'best_f1', model, test_loader, criterion)
+
+    # run.finish()
+
+
 
 if __name__ == "__main__":
     # Set seed before any other operations
     set_all_seeds(42)
 
     config = Config.from_yaml('config.yml')
+    # train_main(config)
+    # test_main(config)
     data_loader = GeneralDataLoader(**config.get_data_loader_params())
 
     # run = wandb.init(
@@ -387,13 +451,12 @@ if __name__ == "__main__":
 
     print("X_train shape:", train_data.X.shape)
     print("X_val shape:", val_data.X.shape)
-    print("X_test shape:", test_data.X.shape)
     print("Classes:", np.unique(train_data.y))
+    print("X_test shape:", test_data.X.shape)
 
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.transformer.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.transformer.batch_size)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
-    stats_pp = None
     model_dir = config.output_paths.models_dir
 
     # === Model, loss, optimizer ===
@@ -415,10 +478,10 @@ if __name__ == "__main__":
     classNames = data_loader.data_config.classes
     ft_col = data_loader.data_config.ft_col
     print(f"===(Testing)===")
-    evaluate_and_save_metrics('last', model, test_loader, criterion, plot_dir, classNames, ft_col)
+    evaluate_and_save_metrics(config, 'last', model, test_loader, criterion)
 
     print("testing f1 best model:")
-    evaluate_and_save_metrics('best_f1', model, test_loader, criterion, plot_dir, classNames, ft_col)
+    evaluate_and_save_metrics(config, 'best_f1', model, test_loader, criterion)
 
 
     # run.finish()

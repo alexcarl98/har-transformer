@@ -232,7 +232,6 @@ class WandBConfig:
 @dataclass
 class OutputPathsConfig:
     base_path: str
-    data_settings: str
     run_id: str = None
     
     def __post_init__(self):
@@ -297,7 +296,7 @@ class Config:
         # TODO:put the loading code from `data.py` into here.
 
         # Create output paths configuration
-        output_paths = OutputPathsConfig(base_path=config_dict['base_output_dir'], data_settings=config_dict['data_settings'])
+        output_paths = OutputPathsConfig(base_path=config_dict['base_output_dir'])
 
         # Create data configuration
         data = DataConfig.from_yaml(yaml_path)
@@ -360,10 +359,3 @@ if __name__ == "__main__":
     config = Config.from_yaml('config.yml')
     print(config.data.partitions)
     print(config.data.partitions.get_all_subjects())
-    exit()
-
-
-    print(config.get_data_config_path())
-    data_loader = data.GeneralDataLoader.from_yaml(config.get_data_config_path())
-    X, y = data_loader.get_Xy('train')
-    print(config.transformer.extracted_features)
