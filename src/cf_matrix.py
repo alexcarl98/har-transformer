@@ -5,64 +5,66 @@ import yaml
 from typing import Dict, List
 from itertools import combinations
 from train import *
+from util import WandBLogger
 
-def cross_sensor_confusion_matrix(config: Config):
 
+def cross_sensor_train(config: Config, val_data: HarDataset, logger: Optional[WandBLogger] = None) -> Optional[WandBLogger]:
     set_all_seeds(42)
-
+    
+    # Initialize WandB logger if wandb is enabled
+    if logger is None and config.wandb.mode != 'disabled':
+        logger = WandBLogger(config)
+    
     data_loader = GeneralDataLoader(**config.get_data_loader_params())
-
-    # run = wandb.init(
-    #     entity=config.wandb.entity,
-    #     project=config.wandb.project,
-    #     config=config.transformer,
-    #     mode=config.wandb.mode,
-    # )
-
     train_data = data_loader.get_har_dataset('train')
-    val_data = data_loader.get_har_dataset('val')
-    test_data = data_loader.get_har_dataset('test')
-
     print("X_train shape:", train_data.X.shape)
     print("X_val shape:", val_data.X.shape)
-    print("X_test shape:", test_data.X.shape)
     print("Classes:", np.unique(train_data.y))
-
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.transformer.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.transformer.batch_size)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
     model_dir = config.output_paths.models_dir
 
     # === Model, loss, optimizer ===
     model = v1.AccelTransformerV1(**config.get_transformer_params()).to(DEVICE)
-
     print(model)
 
     optimizer = Adam(model.parameters(),
-                      lr=config.transformer.learning_rate, 
-                      weight_decay=config.transformer.weight_decay)
+                    lr=config.transformer.learning_rate, 
+                    weight_decay=config.transformer.weight_decay)
     
     criterion = nn.CrossEntropyLoss()
 
-    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, model_dir)
+    train_model(
+        config.transformer, train_loader, val_loader, 
+        model, optimizer, criterion, model_dir,
+        logger=logger
+    )
     
-    print("testing most recent model:")
+    return logger
 
-    plot_dir = config.output_paths.plots_dir
-    classNames = data_loader.data_config.classes
-    ft_col = data_loader.data_config.ft_col
+
+def cross_sensor_confusion_matrix(config: Config, logger: WandBLogger):
+    data_loader = GeneralDataLoader(**config.get_data_loader_params())
+    test_data = data_loader.get_har_dataset('test')
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
+
+    model = v1.AccelTransformerV1(**config.get_transformer_params()).to(DEVICE)
+    criterion = nn.CrossEntropyLoss()
+
+    print("testing most recent model:")
     print(f"===(Testing)===")
-    evaluate_and_save_metrics('last', model, test_loader, criterion, plot_dir, classNames, ft_col)
+    _, last_f1 = evaluate_and_save_metrics(
+        config, 'last', model, test_loader, criterion,
+        logger=logger
+    )
 
     print("testing f1 best model:")
-    evaluate_and_save_metrics('best_f1', model, test_loader, criterion, plot_dir, classNames, ft_col)
-
-
-    # run.finish()
-
-    config.output_paths.clean()
-
-    exit()
+    _, best_f1 = evaluate_and_save_metrics(
+        config, 'best_f1', model, test_loader, criterion,
+        logger=logger
+    )
+    
+    return last_f1, best_f1
 
 
 def main():
@@ -70,14 +72,19 @@ def main():
     # Get all permutations
     to_be_trained_on = [list(comb) for r in range(1, len(valid_sensors) + 1) for comb in combinations(valid_sensors, r)]
     print(f"{to_be_trained_on=}")
-
+    run_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    test_name = 'CSConfusionMatrix_' + run_time
     # Load config
     location_outcome_dict = {}
     config = Config.from_yaml('config.yml')
+    tmp_data_loader = GeneralDataLoader(**config.get_data_loader_params())
+    cross_sensor_validation_set = tmp_data_loader.get_har_dataset('val')
 
-    run_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_path = config.output_paths.base_path + f'/ConfusionMatrix_{run_time}'
-
+    config.wandb.project = test_name
+    base_path = config.output_paths.base_path + f'/{test_name}'
+    os.makedirs(base_path, exist_ok=True)
+    config.output_paths.clean()
+    
     '''
     TODO:
     - remove redundancy in training the same model three times
@@ -87,29 +94,70 @@ def main():
         - Transformer Model class
     '''
 
-    for i, sensor in enumerate(valid_sensors):
-        # you're training the same model three times, make the training and testing separate functions. 
-        location_outcome_dict[sensor] = []
-        config.data.test_on_sensors = [sensor]
-        current_base = base_path + f'/tested_on_{sensor}'
+    for train_sensor in to_be_trained_on:
+        config.data.train_on_sensors = train_sensor
+        r_id = f'{len(train_sensor)}-{'-'.join(train_sensor)}'
+        new_output_path = OutputPathsConfig(base_path, run_id = r_id)
+        location_outcome_dict[r_id] = {}
+        config.output_paths = new_output_path
+
+        logger = WandBLogger(config, run_name = r_id)
+        print(f"Training on {train_sensor}")
+        logger = cross_sensor_train(config, cross_sensor_validation_set, logger)
+
+        base_plot_dir = config.output_paths.plots_dir
         
-        for j, train_sensors in enumerate(to_be_trained_on):
-            len_sen = len(train_sensors)
-            id = f'{len_sen}-{'-'.join(train_sensors)}'
-            new_output_path = OutputPathsConfig(current_base, run_id = id)
-            config.output_paths = new_output_path
-            config.data.train_on_sensors = train_sensors
-            
-            result_dict = {}
-            outcome = cross_sensor_confusion_matrix(config)
-            result_dict[id] = outcome
-            
-            location_outcome_dict[sensor].append(result_dict)
+        for test_sensor in valid_sensors:
+            config.output_paths.plots_dir = base_plot_dir + f'/{test_sensor}'
+            os.makedirs(config.output_paths.plots_dir, exist_ok=True)
+            logger.cm_save_dir = f'{test_sensor}_confusion_matrix'
+            logger.roc_save_dir = f'{test_sensor}_roc_curve'
+            logger.batch_save_dir = f'{test_sensor}_batch_examples'
+
+            config.data.test_on_sensors = [test_sensor]
+            print(f"\tTesting on {test_sensor}")
+            # print(f"\tsaving to {config.output_paths.plots_dir}")
+
+            last_f1, best_f1 = cross_sensor_confusion_matrix(config, logger)
+            results = {
+                f'last_f1': last_f1,
+                f'best_f1': best_f1
+            }
+            location_outcome_dict[r_id][test_sensor] = results
+            print(f"\t{location_outcome_dict[r_id]=}")
+
+        last_sum = 0
+        best_sum = 0
+        for sensor_location in location_outcome_dict[r_id]:
+            print(f"\t{sensor_location=}")
+            last_sum += location_outcome_dict[r_id][sensor_location]['last_f1']
+            best_sum += location_outcome_dict[r_id][sensor_location]['best_f1']
+            # logger.log_metrics(results)
+
+        avg_last_f1 = last_sum / len(location_outcome_dict[r_id])
+        avg_best_f1 = best_sum / len(location_outcome_dict[r_id])
+        location_outcome_dict[r_id]['avg_last_f1'] = avg_last_f1
+        location_outcome_dict[r_id]['avg_best_f1'] = avg_best_f1
+        with open(f'{config.output_paths.run_dir}/outcomes.yml', 'w') as f:
+            yaml.safe_dump(
+                location_outcome_dict[r_id],
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                indent=5,
+                allow_unicode=True,
+                width=120
+            )
+        
+        logger.log_metrics(location_outcome_dict[r_id])
+        logger.finish()
+
+
 
     
-    # Dump to YAML file
+    # # Dump to YAML file
 
-    # For prettier formatting, you can use yaml.safe_dump with additional options:
+    # # For prettier formatting, you can use yaml.safe_dump with additional options:
     with open(f'{base_path}/location_outcomes.yml', 'w') as f:
         yaml.safe_dump(
             location_outcome_dict,

@@ -16,6 +16,8 @@ import wandb
 import os
 from config import Config
 from data import GeneralDataLoader
+from util import WandBLogger
+from typing import Optional
 
 ANSI_BLUE = "\033[94m"
 ANSI_RED = "\033[91m"
@@ -166,7 +168,7 @@ def plot_confusion_matrix(true, predictions, class_names, name="model", graph_pa
     plt.close()  # Close the figure to free memory
 
 
-def evaluate_model(model, data_loader, criterion, name="model", verbose=False, graph_path='', class_names=None, feature_names=None):
+def evaluate_model(model, data_loader, criterion, name="model", verbose=False, graph_path='', class_names=None, feature_names=None, logger=None):
     model.eval()
     total_loss = 0.0
     predictions = []
@@ -233,6 +235,15 @@ def evaluate_model(model, data_loader, criterion, name="model", verbose=False, g
                           pred_batch.cpu().numpy(),
                           class_names, name, graph_path, feature_names)
     
+    if logger:        
+        # Log plots if graph_path exists
+        if graph_path:
+            logger.log_metrics({
+                f"{name}/{logger.cm_save_dir}": wandb.Image(f'{graph_path}/{name}_confusion_matrix.png'),
+                f"{name}/{logger.roc_save_dir}": wandb.Image(f'{graph_path}/{name}_roc_curves.png'),
+                f"{name}/{logger.batch_save_dir}": wandb.Image(f'{graph_path}/{name}_batch_examples.png')
+            })
+
     return avg_loss, f1
 
 
@@ -248,7 +259,7 @@ def save_model(epoch, model_state, optimizer_state,
         'val_f1': val_f1,
     }, f"{model_out_path}/{name}.pth")
 
-def train_model(args, train_loader, val_data, model, optimizer, criterion, model_out_path=''):
+def train_model(args, train_loader, val_data, model, optimizer, criterion, model_out_path='', logger=None):
     best_val_f1 = 0.0
     patience_counter = 0
     current_epoch = 0
@@ -300,17 +311,21 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, model
         avg_train_loss = train_loss / total
         train_accuracy = 100. * correct / total
 
+        # Log training metrics
+
         # Validation phase
         print(f"===(Validation)===")
-        avg_val_loss, f1 = evaluate_model(model, val_data, criterion)
-        print(f"Validation - Avg Loss: {avg_val_loss:.4f}, F1 Score: {f1:.4f}")
-
-        # run.log({
-        #     "train_loss": avg_train_loss,
-        #     "train_accuracy": train_accuracy,
-        #     "val_loss": avg_val_loss,
-        #     "val_f1": f1,
-        # })
+        avg_val_loss, f1 = evaluate_model(
+            model, val_data, criterion, 
+            logger=logger
+        )
+        if logger:
+            metrics = {
+                "train_loss": avg_train_loss,
+                "val_loss": avg_val_loss,
+                "val_f1": f1,
+            }
+            logger.log_metrics(metrics)
 
         # Save best F1 model
         if f1 > best_val_f1:
@@ -322,19 +337,10 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, model
             best_val_f1 = f1
             save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
                       avg_train_loss, avg_val_loss, f1, 
-                      name="best_f1",model_out_path=model_out_path)
+                      name="best_f1", model_out_path=model_out_path)
+            if logger:
+                logger.log_model_artifact("best_f1", f"{model_out_path}/best_f1.pth")
             print(f'New best F1 model saved! Validation F1: {f1:.4f}')
-
-        # # Save best loss model
-        # if avg_val_loss < best_val_loss:
-        #     best_val_loss = avg_val_loss
-        #     save_model(current_epoch, model.state_dict(), optimizer.state_dict(), 
-        #               avg_train_loss, avg_val_loss, f1, 
-        #               name="best_loss",model_out_path=model_out_path)
-        #     print(f'New best loss model saved! Validation Loss: {avg_val_loss:.4f}')
-        
-        last_avg_loss = avg_val_loss
-        last_f1 = f1
 
         # Early stopping check
         if patience_counter >= args.patience:
@@ -357,7 +363,7 @@ def set_all_seeds(seed):
     os.environ['PYTHONHASHSEED'] = str(seed)
 
 
-def evaluate_and_save_metrics(config, name, model, test_loader, criterion):
+def evaluate_and_save_metrics(config, name, model, test_loader, criterion, logger=None):
     model_dir = config.output_paths.models_dir
     output_path = config.output_paths.plots_dir
     classes = config.data.classes
@@ -367,19 +373,18 @@ def evaluate_and_save_metrics(config, name, model, test_loader, criterion):
     return evaluate_model(model, test_loader, criterion, 
                                             name=name, 
                                             verbose=True, graph_path=output_path,
-                                            class_names=classes, feature_names=ft_col)
+                                            class_names=classes, feature_names=ft_col,
+                                            logger=logger)
 
 
-def train_main(config: Config):
+def train_main(config: Config, logger: Optional[WandBLogger] = None) -> Optional[WandBLogger]:
     set_all_seeds(42)
+    
+    # Initialize WandB logger if wandb is enabled
+    if logger is None and config.wandb.mode != 'disabled':
+        logger = WandBLogger(config)
+    
     data_loader = GeneralDataLoader(**config.get_data_loader_params())
-    # run = wandb.init(
-    #     entity=config.wandb.entity,
-    #     project=config.wandb.project,
-    #     config=config.transformer,
-    #     mode=config.wandb.mode,
-    #     job_type='train',
-    # )
     train_data = data_loader.get_har_dataset('train')
     val_data = data_loader.get_har_dataset('val')
     print("X_train shape:", train_data.X.shape)
@@ -394,21 +399,24 @@ def train_main(config: Config):
     print(model)
 
     optimizer = Adam(model.parameters(),
-                      lr=config.transformer.learning_rate, 
-                      weight_decay=config.transformer.weight_decay)
+                    lr=config.transformer.learning_rate, 
+                    weight_decay=config.transformer.weight_decay)
     
     criterion = nn.CrossEntropyLoss()
 
-    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, model_dir)
+    train_model(
+        config.transformer, train_loader, val_loader, 
+        model, optimizer, criterion, model_dir,
+        logger=logger
+    )
+    
+    return logger
 
-def test_main(config: Config):
-    # run = wandb.init(
-    #     entity=config.wandb.entity,
-    #     project=config.wandb.project,
-    #     config=config.transformer,
-    #     mode=config.wandb.mode,
-    #     job_type='test',
-    # )
+def test_main(config: Config, logger: Optional[WandBLogger] = None):
+    # Use existing logger or create new one if None
+    if logger is None and config.wandb.mode != 'disabled':
+        logger = WandBLogger(config)
+    
 
     data_loader = GeneralDataLoader(**config.get_data_loader_params())
     test_data = data_loader.get_har_dataset('test')
@@ -418,74 +426,33 @@ def test_main(config: Config):
     criterion = nn.CrossEntropyLoss()
 
     print("testing most recent model:")
-
     print(f"===(Testing)===")
-    evaluate_and_save_metrics(config, 'last', model, test_loader, criterion)
+    evaluate_and_save_metrics(
+        config, 'last', model, test_loader, criterion,
+        logger=logger
+    )
 
     print("testing f1 best model:")
-    evaluate_and_save_metrics(config, 'best_f1', model, test_loader, criterion)
-
-    # run.finish()
-
-
+    evaluate_and_save_metrics(
+        config, 'best_f1', model, test_loader, criterion,
+        logger=logger
+    )
+    
+    # Only finish the logger if we created it in this function
+    if logger is not None and config.wandb.mode != 'disabled':
+        logger.finish()
 
 if __name__ == "__main__":
-    # Set seed before any other operations
     set_all_seeds(42)
-
     config = Config.from_yaml('config.yml')
-    # train_main(config)
-    # test_main(config)
-    data_loader = GeneralDataLoader(**config.get_data_loader_params())
-
-    # run = wandb.init(
-    #     entity=config.wandb.entity,
-    #     project=config.wandb.project,
-    #     config=config.transformer,
-    #     mode=config.wandb.mode,
-    # )
-
-    train_data = data_loader.get_har_dataset('train')
-    val_data = data_loader.get_har_dataset('val')
-    test_data = data_loader.get_har_dataset('test')
-
-    print("X_train shape:", train_data.X.shape)
-    print("X_val shape:", val_data.X.shape)
-    print("Classes:", np.unique(train_data.y))
-    print("X_test shape:", test_data.X.shape)
-
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.transformer.batch_size, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.transformer.batch_size)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
-    model_dir = config.output_paths.models_dir
-
-    # === Model, loss, optimizer ===
-    model = v1.AccelTransformerV1(**config.get_transformer_params()).to(DEVICE)
-
-    print(model)
-
-    optimizer = Adam(model.parameters(),
-                      lr=config.transformer.learning_rate, 
-                      weight_decay=config.transformer.weight_decay)
+    logger = WandBLogger(config, job_type='train')
     
-    criterion = nn.CrossEntropyLoss()
-
-    train_model(config.transformer, train_loader, val_loader, model, optimizer, criterion, model_dir)
+    # Run training and get logger
+    logger = train_main(config, logger)
     
-    print("testing most recent model:")
-
-    plot_dir = config.output_paths.plots_dir
-    classNames = data_loader.data_config.classes
-    ft_col = data_loader.data_config.ft_col
-    print(f"===(Testing)===")
-    evaluate_and_save_metrics(config, 'last', model, test_loader, criterion)
-
-    print("testing f1 best model:")
-    evaluate_and_save_metrics(config, 'best_f1', model, test_loader, criterion)
-
-
-    # run.finish()
-
+    # Pass logger to test_main
+    test_main(config, logger)
+    
     config.output_paths.clean()
 
     exit()

@@ -252,6 +252,17 @@ class OutputPathsConfig:
         for dir_path in [self.run_dir, self.wandb_dir, self.plots_dir, 
                         self.models_dir, self.metrics_dir]:
             os.makedirs(dir_path, exist_ok=True)
+
+    def initialize_run_dir(self, run_id:str):
+        self.run_id = run_id
+        self.run_dir = os.path.join(self.base_path, f"run_{self.run_id}")
+        self.wandb_dir = os.path.join(self.run_dir, "wandb")
+        self.plots_dir = os.path.join(self.run_dir, "plots")
+        self.models_dir = os.path.join(self.run_dir, "models")
+        self.metrics_dir = os.path.join(self.run_dir, "metrics")
+        for dir_path in [self.run_dir, self.wandb_dir, self.plots_dir, 
+                        self.models_dir, self.metrics_dir]:
+            os.makedirs(dir_path, exist_ok=True)
     
     def get_plot_path(self, model_name: str, plot_name: str) -> str:
         """Get path for a specific plot"""

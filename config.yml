@@ -7,8 +7,8 @@ data:
   raw_dir: "har_data"
   processed_dir: "processed_data"
   # "min_sample","subject", "None"
-  balance_setting: "subject"
-  window_center_percentage: 0.87
+  balance_setting: "None"
+  window_center_percentage: 0.93
   train_on_sensors: &sns
     - ankle
     - wrist
@@ -26,13 +26,13 @@ data:
     # - walk_sidewalk
   test_size: 0.20
   val_size: 0.20
-  window_size: 250
+  window_size: 280
   stride: 5
   ft_col:
     - "x"
     - "y"
     - "z"
-    # - "vm"
+    - "vm"
     # - "time"
 
 partition:
@@ -46,10 +46,10 @@ partition:
   complete_data:
     <<: *cfg
 
-  no_ankle_sensor:
-    <<: *cfg
-    sensors_required: ['wrist', 'waist']
-    sensors_excluded: ['ankle']
+  # no_ankle_sensor:
+  #   <<: *cfg
+  #   sensors_required: ['wrist', 'waist']
+  #   sensors_excluded: ['ankle']
 
   no_jogging_activity:
     <<: *cfg
@@ -72,7 +72,7 @@ evaluation_metrics:
 
 wandb:
   # mode: online, offline, disabled
-  mode: "disabled"
+  mode: "online"
   entity: "alex-alvarez1903-loyola-marymount-university"
   project: "Har-Transformer-New"
   model_versioning: false
@@ -96,26 +96,26 @@ random_forest:
 
 transformer:
   extracted_features:
-    # - "mean"
+    - "mean"
     - "std"
     # - "max"
     # - "min"
     # - "q75"
     # - "q25"
-    # - "iqr"
+    - "iqr"
     - "mad"
     # - "skewness"
   
   warmup_ratio: 0.1
   min_lr_ratio: 0.0
-  batch_size: 64
+  batch_size: 16
   patience: 15
-  learning_rate: 0.0015
+  learning_rate: 0.00001
   weight_decay: 0.0
-  epochs: 1
-  d_model: 66
-  fc_hidden_dim: 128
-  nhead: 6
+  epochs: 2
+  d_model: 128
+  fc_hidden_dim: 256
+  nhead: 8
   num_layers: 2
   dropout: 0.1
   load_model_path: ''
