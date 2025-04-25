@@ -448,8 +448,8 @@ if __name__ == "__main__":
         nhead=config.transformer.nhead,
         # num_layers=args.num_layers,
         dropout=config.transformer.dropout,
-        patch_size=16,
-        kernel_stride=4,
+        patch_size=config.transformer.patch_size,
+        kernel_stride=config.transformer.kernel_stride,
         window_size=data_loader.data_config.window_size,
         extracted_features=config.transformer.extracted_features
     ).to(DEVICE)

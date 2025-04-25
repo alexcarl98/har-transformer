@@ -67,7 +67,7 @@ transformer:
   dropout: 0.1
   load_model_path: ''
   patch_size: 16
-  kernel_stride: 8
+  kernel_stride: 4
 
 
 #   ```
