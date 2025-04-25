@@ -17,95 +17,68 @@ import os
 from config import Config
 from data import GeneralDataLoader
 
-
 ANSI_BLUE = "\033[94m"
 ANSI_RED = "\033[91m"
 ANSI_YELLOW = "\033[93m"
 ANSI_MAGENTA = "\033[95m"
 ANSI_RESET = "\033[0m"
 
-
 # ==== Data Processing ====
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def val_batchX_labels(x_seq, y_true, y_pred, class_names, current_number, num_samples=9, name='', feature_names=None, plot_dir=''):
+def plot_batch_examples(x_seq, true, predictions, class_names, name="model", graph_path='', feature_names=None, num_samples=9):
     """
-    Visualize sample predictions from a batch alongside their signals in a 3x3 grid
+    Visualize sample predictions alongside their signals in a grid
     
     Args:
-        x_seq: tensor of shape (batch_size, seq_len, features)
-        x_meta: tensor of shape (batch_size, meta_features)
-        y_true: tensor of true labels
-        y_pred: tensor of predicted labels
-        decoder_dict: dictionary mapping indices to class names
-        args: configuration arguments
+        x_seq: numpy array of shape (batch_size, seq_len, features)
+        true: numpy array of true labels
+        predictions: numpy array of predicted labels
+        class_names: list of class names
+        name: prefix for saving the plot
+        graph_path: path to save the plot
+        feature_names: list of feature names for plotting
         num_samples: number of samples to visualize (default: 9 for 3x3 grid)
     """
-    # Convert tensors to numpy arrays
-    x_seq = x_seq.cpu().numpy()
-    y_true = y_true.cpu().numpy()
-    y_pred = y_pred.cpu().numpy()
-    
-    # Randomly select samples
-    batch_size = x_seq.shape[0]
+    # Select random samples
+    batch_size = len(true)
     sample_indices = np.random.choice(batch_size, min(num_samples, batch_size), replace=False)
     
-    # Create a grid of subplots (3x3)
+    # Create grid
     nrows = ncols = int(np.ceil(np.sqrt(num_samples)))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(15, 15))
-    
-    # Flatten axes for easier indexing
+    fig, axes = plt.subplots(nrows, ncols, figsize=(12, 12))
     axes_flat = axes.flatten()
     
     # Plot each sample
     for plot_idx, sample_idx in enumerate(sample_indices):
         ax = axes_flat[plot_idx]
+        sequence = x_seq[sample_idx]
+        true_label = class_names[true[sample_idx]]
+        pred_label = class_names[predictions[sample_idx]]
         
-        # Get the sequence data for this sample
-        sequence = x_seq[sample_idx]  # shape: (seq_len, features)
-        true_label = class_names[y_true[sample_idx]]
-        pred_label = class_names[y_pred[sample_idx]]
-        
-        # Calculate time points
+        # Plot features
         time_points = np.arange(sequence.shape[0])
-        
-        # Plot each feature (x, y, z, vm if available)
         colors = ['red', 'green', 'blue', 'purple']
         
         for i, (feature, color) in enumerate(zip(feature_names, colors)):
-            signal_data = sequence[:, i]
-            ax.plot(time_points, signal_data, color=color, 
-                   label=f'{feature.upper()}-axis', linewidth=1, alpha=0.7)
+            ax.plot(time_points, sequence[:, i], color=color, 
+                   label=feature, linewidth=1, alpha=0.7)
         
-        # Customize the subplot
+        # Customize subplot
         ax.set_title(f'True: {true_label}\nPred: {pred_label}',
                     color='green' if true_label == pred_label else 'red')
         ax.set_xlabel('Time Steps')
         ax.set_ylabel('Acceleration (m/s²)')
         ax.grid(True, alpha=0.3)
-        ax.legend(loc='upper right')
+        ax.legend(loc='upper right', fontsize='small')
     
-    # Remove any empty subplots
+    # Remove empty subplots
     for idx in range(plot_idx + 1, len(axes_flat)):
         fig.delaxes(axes_flat[idx])
     
-    plt.suptitle('Sample Predictions from Validation Batch', fontsize=16, y=1.02)
     plt.tight_layout()
-    if name:
-        full_path = f'{plot_dir}/{name}_batch_predictions_{current_number}.png'
-    else:
-        full_path = f'{plot_dir}/batch_predictions_{current_number}.png'
-    
-    # Save and log to wandb if not in debug mode
-    plt.savefig(full_path, bbox_inches='tight')
-    
-    # run.log({
-    #     f"{name}_batch_predictions_{current_number}": wandb.Image(
-    #         plt.imread(full_path),
-    #         caption="Sample Predictions from Validation Batch"
-    #     )
-    # })
+    plt.savefig(f'{graph_path}/{name}_batch_examples.png', bbox_inches='tight', dpi=150)
     plt.close()
 
 def plot_roc_curves(true, all_outputs, class_names, name="model", graph_path=''):
@@ -193,7 +166,7 @@ def plot_confusion_matrix(true, predictions, class_names, name="model", graph_pa
     plt.close()  # Close the figure to free memory
 
 
-def evaluate_model(model, data_loader, criterion, name="model",verbose=False, graph_path='',class_names=None,feature_names=None):
+def evaluate_model(model, data_loader, criterion, name="model", verbose=False, graph_path='', class_names=None, feature_names=None):
     model.eval()
     total_loss = 0.0
     predictions = []
@@ -237,36 +210,28 @@ def evaluate_model(model, data_loader, criterion, name="model",verbose=False, gr
     predictions = np.array(predictions)
     true = np.array(true)
 
-    precision, recall, f1, _ = precision_recall_fscore_support(true, predictions, average='macro')
+    _, _, f1, _ = precision_recall_fscore_support(true, predictions, average='macro')
     avg_loss = total_loss / len(data_loader.dataset)
 
     if verbose:
         print(classification_report(true, predictions, target_names=class_names))
 
     if graph_path:
-        # results = classification_report(true, predictions, target_names=decoder_dict, output_dict=True)
-        # print(results)
-        # exit()
-        # Calculate both raw and normalized confusion matrices
+        # Plot metrics
         plot_confusion_matrix(true, predictions, class_names, name, graph_path)
-        # Plot ROC curves
         plot_roc_curves(true, all_outputs, class_names, name, graph_path)
         
-        idx_1= len(data_loader)//4
-        idx_2= len(data_loader)//2
-        idx_3= 3*len(data_loader)//4
-        idxs= [idx_1, idx_2, idx_3]
-        counter = 0
-        
-        for batch_idx, (x_seq, y_true) in enumerate(data_loader):
-            if batch_idx in idxs:
-                x_seq,  y_true = x_seq.to(DEVICE), y_true.to(DEVICE)
-                outputs = model(x_seq)
-                pred_classes = torch.argmax(outputs, dim=1)
-                val_batchX_labels(x_seq, y_true, pred_classes, class_names,
-                                   counter+1, num_samples=9, name=name, feature_names=feature_names, plot_dir=graph_path)
-                break
-        plt.close()
+        # Get one batch for example plotting
+        x_batch, y_batch = next(iter(data_loader))
+        with torch.no_grad():
+            outputs = model(x_batch.to(DEVICE))
+            pred_batch = torch.argmax(outputs, dim=1)
+            
+        # Plot examples from this batch
+        plot_batch_examples(x_batch.cpu().numpy(), 
+                          y_batch.cpu().numpy(),
+                          pred_batch.cpu().numpy(),
+                          class_names, name, graph_path, feature_names)
     
     return avg_loss, f1
 
@@ -285,7 +250,6 @@ def save_model(epoch, model_state, optimizer_state,
 
 def train_model(args, train_loader, val_data, model, optimizer, criterion, model_out_path=''):
     best_val_f1 = 0.0
-    best_val_loss = float('inf')
     patience_counter = 0
     current_epoch = 0
     last_avg_loss = 0.0
@@ -296,7 +260,6 @@ def train_model(args, train_loader, val_data, model, optimizer, criterion, model
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         best_val_f1 = checkpoint['val_f1']
-        best_val_loss = checkpoint.get('val_loss', float('inf'))
 
     for _ in range(args.epochs):
         current_epoch += 1
@@ -401,6 +364,8 @@ def evaluate_and_save_metrics(name, model, test_loader, criterion, output_path, 
                                             name=name, 
                                             verbose=True, graph_path=output_path,
                                             class_names=classes, feature_names=ft_col)
+
+
 
 if __name__ == "__main__":
     # Set seed before any other operations

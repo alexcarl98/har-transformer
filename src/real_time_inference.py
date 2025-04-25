@@ -18,7 +18,6 @@ class RealTimeInference:
         self.args = self.config.transformer
         
         # Initialize model
-        self.stats_pp = v1.TorchStatsPipeline(self.args.extracted_features, self.data_config.in_seq_dim)
         self.model = self.load_model(model_path)
         self.model.eval()  # Set to evaluation mode
         
@@ -35,13 +34,13 @@ class RealTimeInference:
             fc_hidden_dim=self.args.fc_hidden_dim,
             num_classes=self.data_config.num_classes,
             in_channels=self.data_config.in_seq_dim,
-            # in_meta_dim=self.data_config.in_meta_dim,
             nhead=self.args.nhead,
             dropout=self.args.dropout,
-            patch_size=16,
-            stride=4,
+            num_layers=self.args.num_layers,
+            patch_size=self.args.patch_size,
+            kernel_stride=self.args.kernel_stride,
             window_size=self.data_config.window_size,
-            torch_stats_pipeline=self.stats_pp
+            extracted_features=self.args.extracted_features
         ).to(self.device)
         
         checkpoint = torch.load(model_path)

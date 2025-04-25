@@ -18,7 +18,6 @@ def cross_sensor_confusion_matrix(config, data_config: DataConfig, bio_data: Bio
     val_data = data_loader.get_har_dataset('val')
     test_data = data_loader.get_har_dataset('test')
 
-
     print("X_train shape:", train_data.X.shape)
     print("X_val shape:", val_data.X.shape)
     print("X_test shape:", test_data.X.shape)
@@ -27,11 +26,6 @@ def cross_sensor_confusion_matrix(config, data_config: DataConfig, bio_data: Bio
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=config.transformer.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=config.transformer.batch_size)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=config.transformer.batch_size)
-    stats_pp = None
-
-    if config.transformer.extracted_features is not None:
-        stats_pp = v1.TorchStatsPipeline(config.transformer.extracted_features, 
-                                         data_loader.data_config.in_seq_dim)
 
     # === Model, loss, optimizer ===
     model = v1.AccelTransformerV1(
@@ -39,14 +33,13 @@ def cross_sensor_confusion_matrix(config, data_config: DataConfig, bio_data: Bio
         fc_hidden_dim=config.transformer.fc_hidden_dim,
         num_classes=len(data_loader.data_config.classes),
         in_channels=len(data_loader.data_config.ft_col),
-        # in_meta_dim=config.in_meta_dim,
         nhead=config.transformer.nhead,
-        # num_layers=args.num_layers,
+        num_layers=config.transformer.num_layers,
         dropout=config.transformer.dropout,
-        patch_size=16,
-        stride=4,
+        patch_size=config.transformer.patch_size,
+        kernel_stride=config.transformer.kernel_stride,
         window_size=data_loader.data_config.window_size,
-        torch_stats_pipeline=stats_pp
+        extracted_features=config.transformer.extracted_features
     ).to(DEVICE)
 
     print(model)
@@ -61,65 +54,7 @@ def cross_sensor_confusion_matrix(config, data_config: DataConfig, bio_data: Bio
     
 
     print("testing most recent model:")
-
-    checkpoint = torch.load(f"{config.output_paths.models_dir}/last_accel_transformer.pth")
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    print(f"===(Testing)===")
-    test_avg_loss, test_f1 = evaluate_model(model, test_loader, criterion, 
-                                            name=f"last_model_ep{checkpoint['epoch']}", 
-                                            verbose=True, graph_path=config.output_paths.plots_dir,
-                                            class_names=decoder_dict, feature_names=data_loader.data_config.ft_col)
-
-    result_dict = {
-        "last_model": {
-            "loss": test_avg_loss,
-            "f1": test_f1
-        }
-    }
-    if config.transformer.epochs ==1:
-        return result_dict
-
-        
-    print("testing f1 best model:")
-    checkpoint = torch.load(f"{config.output_paths.models_dir}/best_f1_accel_transformer.pth")
-
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print(f"===(Testing)===")
-    bf1_test_loss, bf1_test_f1= evaluate_model(model, test_loader, criterion, 
-                                                        name=f"best_f1_model_ep{checkpoint['epoch']}", 
-                                                        verbose=True, graph_path=config.output_paths.plots_dir,
-                                                        class_names=decoder_dict, feature_names=data_loader.data_config.ft_col)
-    
-    
-    print("testing f1 best model:")
-    checkpoint = torch.load(f"{config.output_paths.models_dir}/best_loss_accel_transformer.pth")
-
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print(f"===(Testing)===")
-    bl_test_loss, bl_test_f1 = evaluate_model(model, test_loader, criterion, 
-                                                        name=f"best_loss_model_ep{checkpoint['epoch']}", 
-                                                        verbose=True, graph_path=config.output_paths.plots_dir,
-                                                        class_names=decoder_dict, feature_names=data_loader.data_config.ft_col)
-
-
-    if config.transformer.epochs > 1:
-        if bf1_test_loss != bl_test_loss or bf1_test_f1 != bl_test_f1:
-            result_dict["best_f1_model"] = {
-                "loss": bf1_test_loss,
-                "f1": bf1_test_f1
-            }
-            result_dict["best_loss_model"] = {
-                "loss": bl_test_loss,
-                "f1": bl_test_f1
-            }
-        else:
-            result_dict["best_model"] = {
-                "loss": bl_test_loss,
-                "f1": bl_test_f1
-            }
-
-    return result_dict
+    exit()
 
 
 
