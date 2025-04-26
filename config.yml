@@ -8,7 +8,7 @@ data:
   processed_dir: "processed_data"
   # "min_sample","subject", "None"
   balance_setting: "None"
-  window_center_percentage: 0.93
+  window_center_percentage: 0.96
   train_on_sensors: &sns
     - ankle
     - wrist
@@ -18,7 +18,7 @@ data:
     - wrist
     - waist
   classes: &activity_list
-    - jog_treadmill
+    # - jog_treadmill
     - walk_treadmill
     - upstairs
     - downstairs
@@ -26,14 +26,17 @@ data:
     # - walk_sidewalk
   test_size: 0.20
   val_size: 0.20
-  window_size: 280
+  window_size: 512
   stride: 5
   ft_col:
     - "x"
     - "y"
     - "z"
-    - "vm"
+    # - "vm"
     # - "time"
+  augmentation:
+    enabled: true
+    noise_factor: 0.05
 
 partition:
   cross_set_configs: &cfg
@@ -104,20 +107,21 @@ transformer:
     # - "q25"
     - "iqr"
     - "mad"
+    # - "range"
     # - "skewness"
   
   warmup_ratio: 0.1
   min_lr_ratio: 0.0
-  batch_size: 16
+  batch_size: 64
   patience: 15
   learning_rate: 0.00001
-  weight_decay: 0.0
-  epochs: 2
-  d_model: 128
+  weight_decay: 0.0001
+  epochs: 3
+  d_model: 512
   fc_hidden_dim: 256
-  nhead: 8
+  nhead: 4
   num_layers: 2
   dropout: 0.1
   load_model_path: ''
-  patch_size: 16
+  patch_size: 32
   kernel_stride: 4

@@ -1,7 +1,7 @@
 from data import *
 from config import *
 import yaml
-
+import shutil
 from typing import Dict, List
 from itertools import combinations
 from train import *
@@ -65,7 +65,20 @@ def cross_sensor_confusion_matrix(config: Config, logger: WandBLogger):
     )
     
     return last_f1, best_f1
+def report_model_architecture(config: Config, base_path: str):
+    '''
+    If we made it through atleast one cross-sensor run, 
+    we log the model architecture and experiment setup
+    '''
+    model = v1.AccelTransformerV1(**config.get_transformer_params())
+    with open(f"{base_path}/arch.log", "w") as f:
+        f.write(str(model))
 
+    # copy the config file to the base_path
+    shutil.copy(config.file_path, f"{base_path}/config.yml")
+    return
+
+def initialize_experiment_yaml(config: Config)
 
 def main():
     valid_sensors = ['ankle', 'wrist', 'waist']
@@ -84,17 +97,16 @@ def main():
     base_path = config.output_paths.base_path + f'/{test_name}'
     os.makedirs(base_path, exist_ok=True)
     config.output_paths.clean()
-    
-    '''
-    TODO:
-    - remove redundancy in training the same model three times
-    - separate training and testing as their own functions
-    - Need to create new classes:
-        - Analysis Class
-        - Transformer Model class
-    '''
+    wandb_url = f"https://wandb.ai/{config.wandb.entity}/{config.wandb.project}"
+    yaml_pt = f"{base_path}/location_outcomes.yml"
+    with open(yaml_pt, 'a') as f:
+        yaml.safe_dump(
+            {'wandb_url': wandb_url},
+            f,
+            default_flow_style=False,
+        )
 
-    for train_sensor in to_be_trained_on:
+    for i, train_sensor in enumerate(to_be_trained_on):
         config.data.train_on_sensors = train_sensor
         r_id = f'{len(train_sensor)}-{'-'.join(train_sensor)}'
         new_output_path = OutputPathsConfig(base_path, run_id = r_id)
@@ -138,9 +150,9 @@ def main():
         avg_best_f1 = best_sum / len(location_outcome_dict[r_id])
         location_outcome_dict[r_id]['avg_last_f1'] = avg_last_f1
         location_outcome_dict[r_id]['avg_best_f1'] = avg_best_f1
-        with open(f'{config.output_paths.run_dir}/outcomes.yml', 'w') as f:
+        with open(yaml_pt, 'a') as f:
             yaml.safe_dump(
-                location_outcome_dict[r_id],
+                {r_id: location_outcome_dict[r_id]},
                 f,
                 default_flow_style=False,
                 sort_keys=False,
@@ -148,29 +160,11 @@ def main():
                 allow_unicode=True,
                 width=120
             )
-        
+
         logger.log_metrics(location_outcome_dict[r_id])
         logger.finish()
-
-
-
-    
-    # # Dump to YAML file
-
-    # # For prettier formatting, you can use yaml.safe_dump with additional options:
-    with open(f'{base_path}/location_outcomes.yml', 'w') as f:
-        yaml.safe_dump(
-            location_outcome_dict,
-            f,
-            default_flow_style=False,
-            sort_keys=False,
-            indent=5,
-            allow_unicode=True,
-            width=120
-        )
-
-
-
+        if i == 0:
+            report_model_architecture(config, base_path)
 
 if __name__ == "__main__":
 

@@ -222,7 +222,39 @@ class GeneralDataLoader:
         }
     
     def get_Xy(self, split: Literal['train', 'val', 'test']) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Get features and labels for a specific split, with optional augmentation for training data.
+        
+        Args:
+            split: One of 'train', 'val', 'test'
+            
+        Returns:
+            tuple of (features, labels) as numpy arrays
+        """
         X, y = self.data[split]
+        
+        if split == 'train' and self.data_config.augmentation['enabled']:
+            # Select 20% of the data randomly for augmentation
+            aug_size = int(0.2 * len(X))
+            aug_indices = np.random.choice(len(X), aug_size, replace=False)
+            
+            # Generate noise only for selected indices
+            noise_factor = self.data_config.augmentation['noise_factor']
+            noise_amplitude = np.std(X[aug_indices], axis=(0, 1)) * noise_factor
+            noise = np.random.normal(0, noise_amplitude, (aug_size,) + X.shape[1:])
+            
+            # Create augmented samples
+            X_augmented = X[aug_indices] + noise
+            
+            # Combine original and augmented data
+            X = np.concatenate([X, X_augmented], axis=0)
+            y = np.concatenate([y, y[aug_indices]], axis=0)
+            
+            # Shuffle the combined dataset
+            shuffle_idx = np.random.permutation(len(X))
+            X = X[shuffle_idx]
+            y = y[shuffle_idx]
+        
         return X, y
     
     def get_har_dataset(self, split: Literal['train', 'val', 'test']) -> HarDataset:
@@ -230,20 +262,61 @@ class GeneralDataLoader:
         return HarDataset(X, y)
     
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+def plot_accel_window_with_spectrogram(window, axes_labels = ['x', 'y', 'z'], sampling_rate=100):
+    """
+    Plots waveform and spectrogram for a single accelerometer window.
+
+    Parameters:
+        window (np.ndarray): Shape (window_size, 3), where each column is x, y, z axis.
+        axes_labels (list): Labels for the axes. Default is ['x', 'y', 'z'].
+        sampling_rate (int): Samples per second. Default is 100Hz.
+    """
+    n = len(axes_labels)
+    
+    window_size = window.shape[0]
+    time_axis = np.arange(window_size) / sampling_rate
+
+    fig, axs = plt.subplots(2, n, figsize=(5*n, 2*n))
+    fig.suptitle("Waveforms and Spectrograms for Accelerometer Axes", fontsize=16)
+
+    for i in range(n):
+        signal = window[:, i]
+
+        # Waveform
+        axs[0, i].plot(time_axis, signal)
+        axs[0, i].set_title(f"Waveform - {axes_labels[i]} axis")
+        axs[0, i].set_xlabel("Time [s]")
+        axs[0, i].set_ylabel("Amplitude")
+
+        # Spectrogram
+        axs[1, i].specgram(signal, Fs=sampling_rate, cmap='viridis')
+        axs[1, i].set_title(f"Spectrogram - {axes_labels[i]} axis")
+        axs[1, i].set_xlabel("Time [s]")
+        axs[1, i].set_ylabel("Frequency [Hz]")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
 
 
 # Example usage:
 if __name__ == "__main__":
-    data_loader = GeneralDataLoader.from_yaml('config.yml')
-    
+    from train import set_all_seeds
+    set_all_seeds(42)
+    # Here's a custom data loader I have for some accelerometer data
+    data_loader = GeneralDataLoader.from_yaml('config.yml') 
+    # It reads settings from a config file, then formats some raw 
+    # accelerometer data to the config's specifications
+    # Generally, it produces windows of (x,y,z) accelerometer data
+    axes_lbls = data_loader.data_config.ft_col 
+    print(f"{axes_lbls=}")
 
-    # X, y = data_loader.get_Xy('train')
-    # print(f"{X.shape=}")
-    # print(f"{y.shape=}")
-    # print(f"{y=}")
-
-    # har_dataset = data_loader.get_har_dataset('train')
-    # print(f"{har_dataset=}")
-    # print(f"{har_dataset.X.shape=}")
-    # print(f"{har_dataset.y.shape=}")
-    # print(f"{har_dataset.y=}")
+    X, y = data_loader.get_Xy('train') 
+    # I was training a model to predict activities, 
+    # The X is in the shape (number_of_data_points, window_size, 3)
+    # Given the first point, plot the spectrogram across 3 axes and compare that to the wave graphs
+    # Let's have it all on a single plot
+    plot_accel_window_with_spectrogram(X[0], axes_lbls)

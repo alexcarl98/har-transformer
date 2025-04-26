@@ -67,7 +67,7 @@ class WandBLogger:
         """
         
         if not self.allow_artifacts:
-            print(f"{self.allow_artifacts=} Skipping artifact creation.")
+            # print(f"{self.allow_artifacts=} Skipping artifact creation.")
             return
         # Sanitize name for wandb (only alphanumeric, dashes, underscores, and dots allowed)
         artifact_name = f"{model_name.lower().replace(' ', '_')}_model"

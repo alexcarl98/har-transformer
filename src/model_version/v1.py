@@ -6,7 +6,6 @@ from typing import Union, Dict
 class TorchStatsPipeline(nn.Module):
     def __init__(self, attributes: list[str], n_features: int):
         super(TorchStatsPipeline, self).__init__()
-        # self.config = config
         self.n_features = n_features
         self.stats_dim = len(attributes)
         self.stats_dim += 1 if "skewness" in attributes else 0
@@ -133,6 +132,10 @@ class AccelTransformerV1(nn.Module):
                  extracted_features: list[str] = None):
         super().__init__()
         self.stats = None
+        self.use_vm = True
+        if self.use_vm:
+            in_channels += 1
+
         if extracted_features is not None:
             self.stats = TorchStatsPipeline(extracted_features, in_channels)
         # Calculate expected sequence length after convolution
@@ -145,7 +148,7 @@ class AccelTransformerV1(nn.Module):
             patch_size=patch_size,
             stride=kernel_stride
         )
-        
+
         # Make sure d_model is divisible by nhead
         assert d_model % nhead == 0, f"d_model ({d_model}) must be divisible by nhead ({nhead})"
         
@@ -185,6 +188,10 @@ class AccelTransformerV1(nn.Module):
 
     def forward(self, x_seq):
         # Print shapes for debugging
+        if self.use_vm:
+            magnitude = torch.norm(x_seq, dim=2, keepdim=True)
+            x_seq = torch.cat([x_seq, magnitude], dim=2)        # (batch, seq_len, 4)
+
         batch_size = x_seq.size(0)
         
         # Create patches
@@ -205,6 +212,7 @@ class AccelTransformerV1(nn.Module):
         
         # Process metadata
         if self.stats is not None:
+            # let's assume use_vec_mag is True...
             x_stats = self.stats(x_seq)
             x_stats = self.meta_proj(x_stats)
             x = torch.cat((x, x_stats), dim=1)

@@ -80,6 +80,8 @@ class PartitionConfig:
             for subject in subjects
         ))
 
+
+
 @dataclass
 class DataConfig:
     dataset_url: str
@@ -96,6 +98,7 @@ class DataConfig:
     window_size: int
     stride: int
     ft_col: List[str]
+    augmentation: Dict[str, Any] = field(default_factory=lambda: {"enabled": True, "noise_factor": 0.05})
     partitions: Optional[PartitionConfig] = None
 
     @classmethod
@@ -298,6 +301,7 @@ class Config:
     wandb: WandBConfig
     random_forest: Optional[RFConfig] = None
     transformer: Optional[TConfig] = None
+    file_path: Optional[str] = None
 
     @classmethod
     def from_yaml(cls, yaml_path: str) -> 'Config':
@@ -331,7 +335,8 @@ class Config:
             models_tested=config_dict['models_tested'],
             evaluation_metrics=config_dict['evaluation_metrics'],
             wandb=wandb_config,
-            **model_configs
+            **model_configs,
+            file_path=yaml_path
         )
     
 

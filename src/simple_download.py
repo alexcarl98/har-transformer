@@ -138,3 +138,8 @@ def download_data(url, data_dir):
 
 if __name__ == "__main__":
     download_data("https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data", "hhhhhh/")
+
+'''
+ID,sex,age,weight,height,leg_length,torso_length,femur_length,waist_circumference,shoulder_circumference,current_injuries,past_injuries,dominant_hand,dominant_leg,shoe_size,shoe_type,foot_arch_type,notes,bmi,acl_injury,wingspan,upstairs_count,upstairs_percent,downstairs_count,downstairs_percent,jog_treadmill_count,jog_treadmill_percent,walk_treadmill_count,walk_treadmill_percent,walk_mixed_count,walk_mixed_percent,walk_sidewalk_count,walk_sidewalk_percent,total_samples,has_waist,has_ankle,has_wrist
+1,1,25,81.6,183.5,100.0,46.0,56.0,82.0,121.0,,"right knee torn acl, meniscus",Right,Right,12.0,Athletic Shoe,Medium,,24.2336,1,199.0,2470.0,3.81,2471.0,3.81,5500.0,8.47,11500.0,17.72,33000.0,50.84,9963.0,15.35,64904.0,1.0,1.0,1.0
+'''
