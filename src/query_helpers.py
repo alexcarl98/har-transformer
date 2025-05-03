@@ -134,6 +134,7 @@ class SubjectPartition:
     sensors_excluded: Optional[List[str]] = None  # for testing sensor invariance
     has_jogging: Optional[bool] = None  # specifically for jogging class
     min_samples_per_activity: Optional[float] = None  # minimum samples for each activity
+    ID_range: Optional[tuple[float, float]] = None  # minimum samples for each activity
     age_range: Optional[tuple[float, float]] = None
     injury_free: Optional[bool] = None
     
@@ -202,6 +203,9 @@ class SubjectPartition:
             # Add minimum sample requirements for each activity
             for activity in activities:
                 conditions[f'{activity}_count'] = lambda x: x >= self.min_samples_per_activity
+        
+        if self.ID_range is not None:
+            conditions['ID'] = lambda x: self.ID_range[0] <= x <= self.ID_range[1]
         
         # Age range filter
         if self.age_range is not None:

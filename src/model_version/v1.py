@@ -3,8 +3,40 @@ import torch.nn as nn
 import math
 from typing import Union, Dict
 
+class ExpLayer(nn.Module):
+    def __init__(self, in_features, out_features, num_blocks=0, fc1_dim=128, fc2_dim=128, dropout1=0.0, dropout2=0.0,  activation="ReLU"):
+        super().__init__()
+        # Activation function selection
+        activation_layer = {
+            "ReLU": nn.ReLU(),
+            "GELU": nn.GELU(),
+            "Tanh": nn.Tanh()
+        }.get(activation, nn.ReLU())  # default fallback
+        
+        layers = []
+        def add_block(d1, d2, dropout):
+            layers.extend([
+                nn.Linear(d1, d2),
+                activation_layer,
+                nn.Dropout(dropout)
+            ])
+        
+        last_dim = in_features
+        if num_blocks >= 1:
+            add_block(in_features, fc1_dim, dropout1)
+            last_dim = fc1_dim
+        if num_blocks >= 2:
+            add_block(fc1_dim, fc2_dim, dropout2)
+            last_dim = fc2_dim
+
+        layers.append(nn.Linear(last_dim, out_features))
+        self.fc = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.fc(x)
+
 class TorchStatsPipeline(nn.Module):
-    def __init__(self, attributes: list[str], n_features: int):
+    def __init__(self, attributes: list[str], n_features: int, norm_type: str = "layer"):
         super(TorchStatsPipeline, self).__init__()
         self.n_features = n_features
         self.stats_dim = len(attributes)
@@ -14,7 +46,12 @@ class TorchStatsPipeline(nn.Module):
 
         self.pipeline = self.create_pipeline(attributes)
         # Add normalization for both raw and statistical features
-        self.stats_norm = nn.LayerNorm(self.get_feature_dim())
+        if norm_type == "batch":
+            self.stats_norm = nn.BatchNorm1d(self.get_feature_dim())
+        elif norm_type == "layer":
+            self.stats_norm = nn.LayerNorm(self.get_feature_dim())
+        else:
+            self.stats_norm = nn.Identity()
         
     def get_feature_dim(self):
         """Calculate total feature dimension"""
@@ -83,6 +120,7 @@ class TorchStatsPipeline(nn.Module):
         features = {}
         for name, func in self.pipeline:
             feat = func(x)
+            # TODO: How is this actually working?
             if len(feat.shape) > 2:
                 feat = feat.reshape(feat.shape[0], -1)
             features[name] = feat
@@ -128,19 +166,25 @@ class AccelTransformerV1(nn.Module):
     def __init__(self, d_model=128, fc_hidden_dim=128, 
                  in_channels=3, nhead=4, num_layers=2, 
                  dropout=0.1, num_classes=6, patch_size=16, 
-                 kernel_stride=8, window_size=100,
+                 kernel_stride=8, window_size=100, dim_ff_mult=3,
+                 dim_stats_mult=3,tr_dropout = -1,
                  extracted_features: list[str] = None):
         super().__init__()
         self.stats = None
         self.use_vm = True
         if self.use_vm:
             in_channels += 1
+        if tr_dropout < 0:
+            tr_dropout = dropout
 
         if extracted_features is not None:
             self.stats = TorchStatsPipeline(extracted_features, in_channels)
         # Calculate expected sequence length after convolution
         self.max_patches = ((window_size - patch_size) // kernel_stride) + 1
         
+        next_divisible = lambda x, y: x if x % y == 0 else x + (y - x % y)
+        d_model = next_divisible(d_model, nhead)
+
         # Project input sequences into patches
         self.patch_embedding = SensorPatches(
             in_channels=in_channels,
@@ -148,9 +192,7 @@ class AccelTransformerV1(nn.Module):
             patch_size=patch_size,
             stride=kernel_stride
         )
-
         # Make sure d_model is divisible by nhead
-        assert d_model % nhead == 0, f"d_model ({d_model}) must be divisible by nhead ({nhead})"
         
         # Position encoding for the actual number of patches
         self.pos_encoder = LearnablePositionalEncoding(d_model, self.max_patches + 1)  # +1 for cls token
@@ -162,21 +204,23 @@ class AccelTransformerV1(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
-            dim_feedforward=d_model * 3,
-            dropout=dropout,
+            dim_feedforward=int(d_model * dim_ff_mult),
+            dropout=tr_dropout,
             batch_first=True
         )
+
         self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer, 
+            encoder_layer,
             num_layers=num_layers
         )
         
         # Metadata projection
         if self.stats is not None:
             stats_dim= self.stats.get_feature_dim()
-            out_dim = 3*stats_dim
+            out_dim = int(stats_dim * dim_stats_mult)
             d_model += out_dim
-            self.meta_proj = nn.Linear(stats_dim, out_dim)
+            # self.meta_proj = nn.Linear(stats_dim, out_dim)
+            self.meta_proj = ExpLayer(stats_dim, out_dim)
 
         # Final classifier
         self.classifier = nn.Sequential(

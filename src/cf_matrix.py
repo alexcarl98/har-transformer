@@ -78,7 +78,7 @@ def report_model_architecture(config: Config, base_path: str):
     shutil.copy(config.file_path, f"{base_path}/config.yml")
     return
 
-def initialize_experiment_yaml(config: Config)
+
 
 def main():
     valid_sensors = ['ankle', 'wrist', 'waist']
@@ -86,7 +86,7 @@ def main():
     to_be_trained_on = [list(comb) for r in range(1, len(valid_sensors) + 1) for comb in combinations(valid_sensors, r)]
     print(f"{to_be_trained_on=}")
     run_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    test_name = 'CSConfusionMatrix_' + run_time
+    test_name = 'CSCM_' + run_time
     # Load config
     location_outcome_dict = {}
     config = Config.from_yaml('config.yml')
@@ -96,10 +96,11 @@ def main():
     config.wandb.project = test_name
     base_path = config.output_paths.base_path + f'/{test_name}'
     os.makedirs(base_path, exist_ok=True)
-    config.output_paths.clean()
     wandb_url = f"https://wandb.ai/{config.wandb.entity}/{config.wandb.project}"
     yaml_pt = f"{base_path}/location_outcomes.yml"
-    with open(yaml_pt, 'a') as f:
+    print(f"{config.data.partitions.mapping}")
+    
+    with open(yaml_pt, 'w') as f:
         yaml.safe_dump(
             {'wandb_url': wandb_url},
             f,

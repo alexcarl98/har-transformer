@@ -103,7 +103,14 @@ class GeneralDataLoader:
                        for sensor_loc in sensor_locs]
         
         # Load and sort data
-        df = pd.read_csv(file_path, parse_dates=['time']).sort_values('time')
+        # try:
+        #     df = pd.read_csv(file_path, parse_dates=['time'])
+
+        # except:
+        df = pd.read_csv(file_path)
+
+
+        df = df.sort_values('time')
         df['class_change'] = (df['activity'] != df['activity'].shift()).cumsum()
         
         # Process each activity segment

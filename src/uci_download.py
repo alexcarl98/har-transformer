@@ -344,7 +344,6 @@ if __name__ == "__main__":
     print(f"Data extracted to {data_path}")
     allowed_activities = [4,5,12,13]
     # allowed_activities = [0,1,2,3,4,5,12,13]
-    
     all_data = []
     files = os.listdir(data_path + "/Protocol")
     
@@ -373,7 +372,7 @@ if __name__ == "__main__":
     ]
     clsmap = {
         4: 'walk_sidewalk',
-        5: 'jogging_treadmill',
+        5: 'jog_treadmill',
         12: 'upstairs',
         13: 'downstairs',
     }
@@ -386,12 +385,12 @@ if __name__ == "__main__":
     }
     # we are going to look past it for now
     subjects = list(range(101, 110))
-
     for subject in subjects:
         subject_df = pd.read_csv(f"{data_raw_path}/{subject}.csv")
         if len(subject_df) == 0:
             continue
         new_df = subject_df[['time', 'activity']]
+        
         for sensor in sensor_locs:
             acc_cols = [f'{sensor}_acc1_x', f'{sensor}_acc1_y', f'{sensor}_acc1_z']
             gyr_cols = [f'{sensor}_gyro_x', f'{sensor}_gyro_y', f'{sensor}_gyro_z']
@@ -402,19 +401,81 @@ if __name__ == "__main__":
             
             # Get windows of linear acceleration data
             windows, jump_timestamps = calculate_linear_acceleration_windows(subject_df, acc1, gyr, mag, frequency=frequency)
-            print(f"{len(windows)=}")
-            print(f"{jump_timestamps=}")
-            # Concatenate all windows into a single array
-            all_data = np.concatenate(windows, axis=0)  # Shape: (total_samples, 4)
+            
+            # Group windows by activity
+            activity_windows = {}
+            current_activity = None
+            for i, jump in enumerate(jump_timestamps):
+                activity = jump['old_activity']
+                if activity not in activity_windows:
+                    activity_windows[activity] = []
+                
+                # Add the window size to our list for this activity
+                window_size = len(windows[i])
+                activity_windows[activity].append((i, window_size))
+            
+            # Add the last window
+            last_activity = jump_timestamps[-1]['new_activity'] if jump_timestamps else subject_df['activity'].iloc[0]
+            if last_activity not in activity_windows:
+                activity_windows[last_activity] = []
+            activity_windows[last_activity].append((len(windows)-1, len(windows[-1])))
+            
+            print(f"\nSubject {subject}, Sensor {sensor}:")
+            # Keep only the largest window for each activity
+            largest_windows = []
+            for activity, window_list in activity_windows.items():
+                if not window_list:
+                    continue
+                # Find the window with maximum size
+                max_idx, max_size = max(window_list, key=lambda x: x[1])
+                largest_windows.append(windows[max_idx])
+                print(f"Activity {activity}: Keeping window {max_idx} with {max_size} samples "
+                      f"(dropped {len(window_list)-1} smaller windows)")
+            
+            # Concatenate the largest windows
+            all_data = np.concatenate(largest_windows, axis=0)  # Shape: (total_samples, 4)
+            print(f"Total samples after keeping largest windows: {len(all_data)}")
 
             # Create the new columns using the timestamps to align data
-            new_df.loc[new_df['time'].isin(all_data[:, 0]), [f'{mpsn[sensor]}_x', f'{mpsn[sensor]}_y', f'{mpsn[sensor]}_z']] = all_data[:, 1:]
-            
-        print(f"{subject=}")
+            new_df.loc[new_df['time'].isin(all_data[:, 0]), 
+                      [f'{mpsn[sensor]}_x', f'{mpsn[sensor]}_y', f'{mpsn[sensor]}_z']] = all_data[:, 1:]
+        
+        print(f"\nFinal processing for subject {subject}:")
+        print(f"Original shape: {len(new_df)}")
         new_df.dropna(inplace=True)
+        print(f"Shape after dropping NaN: {len(new_df)}")
         new_df['activity'] = new_df['activity'].map(clsmap)
-        print(f"{new_df.head()}")
+        print(f"Sample of final data:")
+        print(new_df.head())
         new_df.to_csv(f"{config.data.raw_dir}/uci/{subject}.csv", index=False)
+    # for subject in subjects:
+    #     subject_df = pd.read_csv(f"{data_raw_path}/{subject}.csv")
+    #     if len(subject_df) == 0:
+    #         continue
+    #     new_df = subject_df[['time', 'activity']]
+    #     for sensor in sensor_locs:
+    #         acc_cols = [f'{sensor}_acc1_x', f'{sensor}_acc1_y', f'{sensor}_acc1_z']
+    #         gyr_cols = [f'{sensor}_gyro_x', f'{sensor}_gyro_y', f'{sensor}_gyro_z']
+    #         mag_cols = [f'{sensor}_magn_x', f'{sensor}_magn_y', f'{sensor}_magn_z']
+    #         acc1 = subject_df[acc_cols].values
+    #         gyr = subject_df[gyr_cols].values
+    #         mag = subject_df[mag_cols].values
+            
+    #         # Get windows of linear acceleration data
+    #         windows, jump_timestamps = calculate_linear_acceleration_windows(subject_df, acc1, gyr, mag, frequency=frequency)
+    #         print(f"{len(windows)=}")
+    #         print(f"{jump_timestamps=}")
+    #         # Concatenate all windows into a single array
+    #         all_data = np.concatenate(windows, axis=0)  # Shape: (total_samples, 4)
+
+    #         # Create the new columns using the timestamps to align data
+    #         new_df.loc[new_df['time'].isin(all_data[:, 0]), [f'{mpsn[sensor]}_x', f'{mpsn[sensor]}_y', f'{mpsn[sensor]}_z']] = all_data[:, 1:]
+            
+    #     print(f"{subject=}")
+    #     new_df.dropna(inplace=True)
+    #     new_df['activity'] = new_df['activity'].map(clsmap)
+    #     print(f"{new_df.head()}")
+    #     new_df.to_csv(f"{config.data.raw_dir}/uci/{subject}.csv", index=False)
 
         # for activity in activities:
         #     activity_distribution = subject_df[subject_df['activity'] == activity]['activity'].value_counts()

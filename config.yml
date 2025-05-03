@@ -18,15 +18,15 @@ data:
     - wrist
     - waist
   classes: &activity_list
-    # - jog_treadmill
-    - walk_treadmill
+    - jog_treadmill
+    # - walk_treadmill
     - upstairs
     - downstairs
     # - walk_mixed
-    # - walk_sidewalk
+    - walk_sidewalk
   test_size: 0.20
   val_size: 0.20
-  window_size: 512
+  window_size: 300
   stride: 5
   ft_col:
     - "x"
@@ -43,6 +43,7 @@ partition:
     activities_required: *activity_list
     sensors_required: *sns
     min_samples_per_activity: 1000
+    ID_range: [0, 50]
     # age_range: [20, 30]
     # injury_free: true
 
@@ -57,6 +58,12 @@ partition:
   no_jogging_activity:
     <<: *cfg
     has_jogging: false
+
+  pamap:
+    <<: *cfg
+    ID_range: [100, 110]
+
+
 
 # which models to test in this trial 
 # commenting out models will not test that model
@@ -117,11 +124,11 @@ transformer:
   learning_rate: 0.00001
   weight_decay: 0.0001
   epochs: 3
-  d_model: 512
-  fc_hidden_dim: 256
+  d_model: 256
+  fc_hidden_dim: 512
   nhead: 4
   num_layers: 2
   dropout: 0.1
   load_model_path: ''
-  patch_size: 32
+  patch_size: 16
   kernel_stride: 4
