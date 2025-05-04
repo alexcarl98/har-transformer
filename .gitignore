@@ -233,3 +233,11 @@ wandb/
 *.pth
 raw_data/
 scripts/mgmt.sh
+models/
+processed_data/
+har_data/
+
+pi_files/exp/
+outputs/
+
+src/exp/wip/

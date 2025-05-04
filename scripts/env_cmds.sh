@@ -8,3 +8,5 @@ conda install -c conda-forge pytest
 
 pip install ahrs
 pip install --upgrade wandb
+pip install keyboard --break-system-packages
+pip install torchinfo --break-system-packages

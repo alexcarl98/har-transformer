@@ -1,52 +1,134 @@
-model: &base_model
-  data_dir: "raw_data/"
-  output_dir: "doc/latex/figure/"
-  model_out_dir: "models/"
-  random_seed: 42
-  # ==== Data Processing ====
-  sensor_loc:
-    - "waist"
-    - "ankle"
-    - "wrist"
+# which directory to save the trial outputs
+base_output_dir: "outputs"
+
+data:
+  dataset_url: "https://raw.githubusercontent.com/Har-Lab/HumanActivityData/refs/heads/main/data/labeled_activity_data/"
+  dataset_name: "har-labs-activity-data"
+  raw_dir: "har_data"
+  processed_dir: "processed_data"
+  # "min_sample","subject", "None"
+  balance_setting: "None"
+  window_center_percentage: 0.96
+  train_on_sensors: &sns
+    - ankle
+    - wrist
+    - waist
+  test_on_sensors:
+    - ankle
+    - wrist
+    - waist
+  classes: &activity_list
+    - jog_treadmill
+    # - walk_treadmill
+    - upstairs
+    - downstairs
+    # - walk_mixed
+    - walk_sidewalk
+  test_size: 0.20
+  val_size: 0.20
+  window_size: 300
+  stride: 5
   ft_col:
     - "x"
     - "y"
     - "z"
-    - "vm"
-  extracted_features:
-    - "mean"
-    - "std"
-  
-  classes:
-    - "downstairs"
-    - "jog_treadmill"
-    - "upstairs"
-    - "walk_treadmill"
-    # - "walk_mixed"
-    # - "walk_sidewalk"
+    # - "vm"
+    # - "time"
+  augmentation:
+    enabled: true
+    noise_factor: 0.05
 
-  window_size: 100
-  stride: 5
-  
-# ==== Model Training ====
+partition:
+  cross_set_configs: &cfg
+    activities_required: *activity_list
+    sensors_required: *sns
+    min_samples_per_activity: 1000
+    ID_range: [0, 50]
+    # age_range: [20, 30]
+    # injury_free: true
+
+  complete_data:
+    <<: *cfg
+
+  # no_ankle_sensor:
+  #   <<: *cfg
+  #   sensors_required: ['wrist', 'waist']
+  #   sensors_excluded: ['ankle']
+
+  no_jogging_activity:
+    <<: *cfg
+    has_jogging: false
+
+  pamap:
+    <<: *cfg
+    ID_range: [100, 110]
+
+
+
+# which models to test in this trial 
+# commenting out models will not test that model
+models_tested:
+  - random_forest
+  - transformer
+
+# which metrics to use in testing our models, 
+# commenting out metrics will not test that metric
+evaluation_metrics:
+  - accuracy
+  - confusion_matrix
+  - classification_report
+  - ROC_AUC
+  - val_batch_examples
+
+wandb:
+  # mode: online, offline, disabled
+  mode: "online"
+  entity: "alex-alvarez1903-loyola-marymount-university"
+  project: "Har-Transformer-New"
+  model_versioning: false
+
+
 random_forest:
-  <<: *base_model
+  extracted_features:
+    # - "mean"
+    - "std"
+    # - "max"
+    # - "min"
+    # - "q75"
+    # - "q25"
+    # - "iqr"
+    - "mad"
+    # - "skewness"
   n_estimators: 100
   max_depth: 10
   min_samples_split: 2
   min_samples_leaf: 1
 
 transformer:
-  <<: *base_model
-  test_size: 0.2
+  extracted_features:
+    - "mean"
+    - "std"
+    # - "max"
+    # - "min"
+    # - "q75"
+    # - "q25"
+    - "iqr"
+    - "mad"
+    # - "range"
+    # - "skewness"
+  
+  warmup_ratio: 0.1
+  min_lr_ratio: 0.0
   batch_size: 64
-  patience: 10
-  learning_rate: 0.001
-  weight_decay: 0.001
-  epochs: 30
-  d_model: 64
-  fc_hidden_dim: 128
+  patience: 15
+  learning_rate: 0.00001
+  weight_decay: 0.0001
+  epochs: 3
+  d_model: 256
+  fc_hidden_dim: 512
   nhead: 4
   num_layers: 2
   dropout: 0.1
   load_model_path: ''
+  patch_size: 16
+  kernel_stride: 4
