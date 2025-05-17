@@ -60,6 +60,7 @@ def obtain_standard_partitions(bio_data: BiometricsData, activity_list: List[str
 
 class GeneralDataLoader:
     def __init__(self, data_config: DataConfig, bio_data: BiometricsData, subject_partitions: Dict[str, List[str]], min_sample_count: int = None):
+        self.current_subjects = {'train': [], 'val': [], 'test': []}
         self.data_config = data_config
         self.parts = subject_partitions
         self.subject_partitions = list(subject_partitions.values())
@@ -93,6 +94,10 @@ class GeneralDataLoader:
             print(f"Processing new data config and saving to {self.data_save_path}")
             self.data = self.process_partitions()
             pickle.dump(self.data, open(self.data_save_path, 'wb'))
+
+        print(f"{self.current_subjects['train']=}")
+        print(f"{self.current_subjects['val']=}")
+        print(f"{self.current_subjects['test']=}")
 
     def process_features_labels(self, subject_id: str, subject_windows: Dict[str, tuple[int, int]], 
                               sensor_locs: List[str]) -> tuple[List[np.ndarray], List[int]]:
@@ -194,6 +199,8 @@ class GeneralDataLoader:
             'val_X': [], 'val_y': [],
             'test_X': [], 'test_y': []
         }
+        # Track subjects for each split
+        split_subjects = {'train': [], 'val': [], 'test': []}
         
         for partition in self.subject_partitions:
             # Split subjects into train/val/test
@@ -218,7 +225,11 @@ class GeneralDataLoader:
                 X, y = self.process_partition(split_partition, sensors)
                 datasets[f'{split_name}_X'].append(X)
                 datasets[f'{split_name}_y'].append(y)
+                # Save subjects for this split
+                split_subjects[split_name].extend(split_partition)
         
+        # Save the subjects for each split
+        self.current_subjects = split_subjects
 
         self.write_to_csv()
         # Concatenate all partitions

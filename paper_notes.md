@@ -4,25 +4,15 @@ https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9372813
 Human’s move different
 - We need an invariant feature learning framework
 
-Learning paradigms:
-1. Meta-learning to deal with data shortage and enhance overall performance via kn
-
-IFLF incorporates two learning paradigms: 
+IFLF incorporates two learning paradigms:
 1. Meta-learning to capture robust features across seen domains and adapt to an unseen one with similarity-based data selection.
 2. Multi-task learning to deal with data shortage and enhance overall performance via knowledge sharing among different subjects. 
-
-
-
 
 
 # Intro
 Can handle several subjects, several devices.
 
-
-
-
 Hard to re-use data from various datasets
-
 
 HUMAN activity recognition (HAR) is the foundation to realize remote health services and in-home mobility monitoring. Although deep learning has seen many successes in this field, training deep models often requires a large amount of sensory data that is not always available [1]. 
 
@@ -68,20 +58,11 @@ Deep models are reported to achieve state-of-the-art results on many popular ope
 
 # Method
 
-- $X$: Input space
-- $Y$: Label space
-- $D_{tgt}\{ x_n, y_n ) \}^M _{n=1}$: target domain space
-- $D_{src}\{ x_n, y_n ) \}^M _{n=1}$: Label space
-
-
-So is each task specific network some kind of binary classifier?
-
-
-
-
 Let the input and label spaces be $𝒳$ and $𝒴$, respectively. 
 - $𝒳$ input space
 - $𝒴$ label space
+- $D_{tgt}\{ x_n, y_n ) \}^M _{n=1}$: target domain space
+- $D_{src}\{ x_n, y_n ) \}^M _{n=1}$: Label space
 
 The target domain and the set of source domains are $𝒟_{tgt}\{ (x_n, y_n ) \}^M _{n=1}$ and $𝒟_{src}= \{D_1, D_2, ..., D_K\}$, respectively. $𝒟_{tgt}$ and $𝒟_{src}$ follow different distributions on the joint space $𝒳 × 𝒴$.
 
@@ -92,7 +73,7 @@ In HAR, each task is a multi-class classification problem that predicts the acti
 We assume the existence of domain-invariant features across the source and target domains, only the domain specific layers of the model need to be updated when applying to the target domain. In this section, we present the detail of the proposed method. First, we illustrate the overall idea in Section 3.1. Second, the detail of invariant feature learning will be introduced in Section 3.2. Third, we explain in Section 3.3 the similarity-based fast adaptation.
 
 
-## overview
+## Overview
 
 intution behind IFLF learn 2 types of knowledge from several source domains:
 - learn shared features that can boost the generalization of ml model & 

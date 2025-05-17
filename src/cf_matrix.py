@@ -99,7 +99,7 @@ def main():
     wandb_url = f"https://wandb.ai/{config.wandb.entity}/{config.wandb.project}"
     yaml_pt = f"{base_path}/location_outcomes.yml"
     print(f"{config.data.partitions.mapping}")
-    
+    print(tmp_data_loader.current_subjects)
     with open(yaml_pt, 'w') as f:
         yaml.safe_dump(
             {'wandb_url': wandb_url},
@@ -108,6 +108,8 @@ def main():
         )
 
     for i, train_sensor in enumerate(to_be_trained_on):
+        # if len(train_sensor) == 1:
+        #     continue
         config.data.train_on_sensors = train_sensor
         r_id = f'{len(train_sensor)}-{'-'.join(train_sensor)}'
         new_output_path = OutputPathsConfig(base_path, run_id = r_id)

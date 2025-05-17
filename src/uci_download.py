@@ -69,12 +69,12 @@ column_names = [
     "activity",
     "heart_rate", # bpm
     "hand_temp",
-    "hand_acc1_x",
-    "hand_acc1_y",
-    "hand_acc1_z",
     "hand_acc2_x",
     "hand_acc2_y",
     "hand_acc2_z",
+    "hand_acc1_x",
+    "hand_acc1_y",
+    "hand_acc1_z",
     "hand_gyro_x",
     "hand_gyro_y",
     "hand_gyro_z",
@@ -86,12 +86,12 @@ column_names = [
     "hand_unk3",
     "hand_unk4",
     "chest_temp",
-    "chest_acc1_x",
-    "chest_acc1_y",
-    "chest_acc1_z",
     "chest_acc2_x",
     "chest_acc2_y",
     "chest_acc2_z",
+    "chest_acc1_x",
+    "chest_acc1_y",
+    "chest_acc1_z",
     "chest_gyro_x",
     "chest_gyro_y",
     "chest_gyro_z",
@@ -103,12 +103,12 @@ column_names = [
     "chest_unk3",
     "chest_unk4",
     "ankle_temp",
-    "ankle_acc1_x",
-    "ankle_acc1_y",
-    "ankle_acc1_z",
     "ankle_acc2_x",
     "ankle_acc2_y",
     "ankle_acc2_z",
+    "ankle_acc1_x",
+    "ankle_acc1_y",
+    "ankle_acc1_z",
     "ankle_gyro_x",
     "ankle_gyro_y",
     "ankle_gyro_z",
@@ -121,10 +121,10 @@ column_names = [
     "ankle_unk4",
 ]
 
-"""
-timestamp activityID heart_rate 
-8.38 0 104 30 2.37223 8.60074 3.51048 2.43954 8.76165 3.35465 -0.0922174 0.0568115 -0.0158445 14.6806 -69.2128 -5.58905 1 0 0 0 31.8125 0.23808 9.80003 -1.68896 0.265304 9.81549 -1.41344 -0.00506495 -0.00678097 -0.00566295 0.47196 -51.0499 43.2903 1 0 0 0 30.3125 9.65918 -1.65569 -0.0997967 9.64689 -1.55576 0.310404 0.00830026 0.00925038 -0.0175803 -61.1888 -38.9599 -58.1438 1 0 0 0
-"""
+# """
+# timestamp activityID heart_rate 
+# 8.38 0 104 30 2.37223 8.60074 3.51048 2.43954 8.76165 3.35465 -0.0922174 0.0568115 -0.0158445 14.6806 -69.2128 -5.58905 1 0 0 0 31.8125 0.23808 9.80003 -1.68896 0.265304 9.81549 -1.41344 -0.00506495 -0.00678097 -0.00566295 0.47196 -51.0499 43.2903 1 0 0 0 30.3125 9.65918 -1.65569 -0.0997967 9.64689 -1.55576 0.310404 0.00830026 0.00925038 -0.0175803 -61.1888 -38.9599 -58.1438 1 0 0 0
+# """
 def download_extract_uci_data():
     name = "PAMAP2_Dataset"
     zipped_data_name = f"{name}.zip"
@@ -248,6 +248,57 @@ def demo_activity_existing_data():
         frequency = estimate_frequency(group, 'time')
         
         plot_accel_window_with_spectrogram(features, f"{subject_number}_{activity}_freq={frequency:.1f}", axes_labels=feature_cols, sampling_rate=100)
+
+
+
+def calculate_normalized_acceleration_windows(df, acc1, gyr, mag, frequency=100, max_time_gap=0.1):
+    """
+    Calculate normalized acceleration windows from raw sensor data.
+    Instead of using Madgwick, just normalize by dividing by gravity (9.81 m/s²).
+    """
+    # df = df.dropna()  # Optionally keep this if you want to drop NaNs
+
+    windows = []
+    current_window = []
+    jump_timestamps = []
+    current_activity = df['activity'].iloc[0]
+    last_time = df['time'].iloc[0]
+
+    for i in range(1, len(df)):
+        current_time = df['time'].iloc[i]
+        time_delta = current_time - last_time
+
+        acc_sample = np.array(acc1[i])
+
+        # Check for window breaks
+        if time_delta > max_time_gap or df['activity'].iloc[i] != current_activity:
+            if len(current_window) > 0:
+                windows.append(np.array(current_window))
+
+            # Record the timestamp where the jump occurred
+            jump_timestamps.append({
+                'timestamp': current_time,
+                'reason': 'time_gap' if time_delta > max_time_gap else 'activity_change',
+                'gap_size': time_delta if time_delta > max_time_gap else None,
+                'old_activity': current_activity,
+                'new_activity': df['activity'].iloc[i]
+            })
+
+            current_activity = df['activity'].iloc[i]
+            current_window = []
+
+        # Normalize by gravity
+        norm_acc_sample = acc_sample / 9.81
+
+        # Store [timestamp, norm_acc_x, norm_acc_y, norm_acc_z]
+        current_window.append(np.array([current_time, *norm_acc_sample]))
+        last_time = current_time
+
+    # Add final window
+    if len(current_window) > 0:
+        windows.append(np.array(current_window))
+
+    return windows, jump_timestamps
 
 
 def calculate_linear_acceleration_windows(df, acc1, gyr, mag, frequency=100, max_time_gap=0.1):
@@ -400,7 +451,8 @@ if __name__ == "__main__":
             mag = subject_df[mag_cols].values
             
             # Get windows of linear acceleration data
-            windows, jump_timestamps = calculate_linear_acceleration_windows(subject_df, acc1, gyr, mag, frequency=frequency)
+            # windows, jump_timestamps = calculate_linear_acceleration_windows(subject_df, acc1, gyr, mag, frequency=frequency)
+            windows, jump_timestamps = calculate_normalized_acceleration_windows(subject_df, acc1, gyr, mag, frequency=frequency)
             
             # Group windows by activity
             activity_windows = {}

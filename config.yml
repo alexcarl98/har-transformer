@@ -24,9 +24,9 @@ data:
     - downstairs
     # - walk_mixed
     - walk_sidewalk
-  test_size: 0.20
-  val_size: 0.20
-  window_size: 300
+  test_size: 0.10
+  val_size: 0.15
+  window_size: 512
   stride: 5
   ft_col:
     - "x"
@@ -55,9 +55,9 @@ partition:
   #   sensors_required: ['wrist', 'waist']
   #   sensors_excluded: ['ankle']
 
-  no_jogging_activity:
-    <<: *cfg
-    has_jogging: false
+  # no_jogging_activity:
+  #   <<: *cfg
+  #   has_jogging: false
 
   pamap:
     <<: *cfg
